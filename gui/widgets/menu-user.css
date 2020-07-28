@@ -1,0 +1,8 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+img.userMenuAvatar {
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    padding: 8px;
+}

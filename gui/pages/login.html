@@ -1,0 +1,112 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<header>
+    <span class="left">
+        ${Application.Widgets["hamburger-menu"].ConnectedCallback()}
+        <a href="/"><img alt="SabzCity logo" src="/images/app-icon-48x48.png" /></a>
+    </span>
+
+    <span class="center"></span>
+
+    <span class="right">
+        ${Application.Widgets["user-menu"].ConnectedCallback()}
+        ${Application.Widgets["service-menu"].ConnectedCallback()}
+    </span>
+</header>
+
+<main>
+    <div id="usernamePhase">
+        <article>
+            <header>
+                <h1 class="typography--headline5">${LocaleText[21]}</h1>
+                <h2 class="typography--subtitle1">${LocaleText[22]}</h2>
+            </header>
+
+            <div id="getUsername" class="input">
+                <input type="text" id="username" minlength="4" required />
+                <label for="username">${LocaleText[30]}</label>
+            </div>
+
+            <footer>
+                <div class="right">
+                    <button type="button" onclick="Application.Pages['login'].next()">
+                        <label>${LocaleText[23]}</label>
+                    </button>
+                </div>
+            </footer>
+        </article>
+
+        <article class="social-login">
+            <header>
+                <h1 class="typography--subtitle1">${LocaleText[31]}</h1>
+            </header>
+
+            <div>
+                <a href="">
+                    <img src="/images/Google__G__Logo.svg" alt="Google platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/linkedin-logo.svg" alt="Linkedin platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/instagram-logo.svg" alt="Instagram platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/twitter-logo.svg" alt="Twitter platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/github-logo.svg" alt="Github platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/facebook-logo.svg" alt="Youtube platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/telegram-logo.svg" alt="Telegram platform logo" />
+                </a>
+            </div>
+        </article>
+
+        <article>
+            <header>
+                <a href="/register"> ${LocaleText[24]} </a>
+            </header>
+        </article>
+    </div>
+
+    <div id="passwordPhase" hidden>
+        <article>
+            <header>
+                <h1 class="typography--headline5">Hi ${this.userName}</h1>
+                <h2 class="typography--subtitle1">${LocaleText[25]}</h2>
+            </header>
+
+            <div class="input">
+                <input type="password" id="Password" />
+                <label for="Password">${LocaleText[29]}</label>
+
+                <div ?hidden=${this.twoStep ? false : true}>
+                    <input type="otp-password" id="OTP" />
+                    <label for="OTP"> OTP </label>
+                </div>
+            </div>
+
+            <footer>
+                <div class="left">
+                    <input type=checkbox role=switch id="rm" />
+                    <label for="rm"> ${LocaleText[26]} </label>
+                </div>
+                <div class="right">
+                    <button type="button" class=raised onclick="Application.Pages['login'].back()">
+                        ${LocaleText[27]}
+                    </button>
+                </div>
+            </footer>
+        </article>
+
+        <article>
+            <header>
+                <a href="/recover">${LocaleText[28]} </a>
+            </header>
+        </article>
+    </div>
+</main>

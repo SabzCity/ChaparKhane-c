@@ -1,0 +1,27 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<button type="button" class="icon" onclick="toggleServiceMenu()" title="${LocaleText[2]}" aria-haspopup="true" aria-controls="serviceMenu" .aria-expanded=${Application.Widgets['service-menu'].dialogOpen} accesskey="m">
+    <svg viewBox="0 0 24 24">
+        <path d="M6,8c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM12,20c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM6,20c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM6,14c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM12,14c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM16,6c0,1.1 0.9,2 2,2s2,-0.9 2,-2 -0.9,-2 -2,-2 -2,0.9 -2,2zM12,8c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM18,14c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM18,20c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2z"></path>
+    </svg>
+</button>
+
+<div class="disabledBackground" id="serDisabledBackground" onclick="toggleServiceMenu()" hidden></div>
+<dialog type="modal" id="serviceMenu">
+    <!-- more than 100 services and apps! find it easily by typing! -->
+    <div>
+        <input id="findInput" type="text" oninput="findServiceInServiceMenu(this.value)">
+        <label for="findInput">${LocaleText[0]}</label>
+    </div>
+
+    <nav title="LocaleText[2]">
+        <ul id="servicesContainer">
+            ${services}
+        </ul>
+    </nav>
+
+    <hr />
+
+    <!-- User can change services order and defaults -->
+    <a href="">${LocaleText[1]}</a>
+</dialog>

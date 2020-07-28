@@ -1,0 +1,24 @@
+{
+    "en": [
+        "Forbidden - 403",
+        "403",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "403 Forbidden error",
+        "Your client does not have permission to get needed data for this page to show"
+    ],
+    "fa": [
+        "ممنوع - 403",
+        "403",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "خطای ممنوعه 403",
+        "دستگاه شما مجوز لازم برای اخذ اطلاعات مورد نیاز این صفحه را ندارد"
+    ]
+}

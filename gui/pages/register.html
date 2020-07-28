@@ -1,0 +1,137 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<header>
+    <span class="left">
+        ${Application.Widgets["hamburger-menu"].ConnectedCallback()}
+        <a href="/"><img alt="SabzCity logo" src="/images/app-icon-48x48.png" /></a>
+    </span>
+
+    <span class="center"></span>
+
+    <span class="right">
+        ${Application.Widgets["user-menu"].ConnectedCallback()}
+        ${Application.Widgets["service-menu"].ConnectedCallback()}
+    </span>
+</header>
+
+<main>
+    <div id="phonePhase">
+        <article>
+            <header>
+                <h1 class="typography--headline5"> ${LocaleText[21]} </h1>
+                <h3 class="typography--subtitle1"> ${LocaleText[22]} </h3>
+            </header>
+
+            <div>
+                <div>
+                    <input type="tel" id="phoneNumber" required />
+                    <label for="phone">${LocaleText[32]}</label>
+                </div>
+                <div>
+                    <input type="password" id="password" required />
+                    <label for="Password">${LocaleText[33]}</label>
+                </div>
+                <div class="captchaContainer">
+                    <img id="captchaImg" src="" alt="">
+                    <button onclick="registerPageRefreshCaptcha()" title="${LocaleText[36]}">
+                        <i class="icons-font">refresh</i>
+                    </button>
+                    <button onclick="registerPagePlayCaptchaAudio()" title="${LocaleText[37]}Play">
+                        <i class="icons-font">volume_up</i>
+                    </button>
+                    <div>
+                        <input type="text" id="captchaText" required />
+                        <label for="captchaText">${LocaleText[38]}</label>
+                    </div>
+                </div>
+                <!-- TODO::: add captcha -->
+            </div>
+
+            <footer>
+                <div class="right">
+                    <button type="button" onclick="registerPageNextStep()">
+                        <label>${LocaleText[34]}</label>
+                    </button>
+                </div>
+            </footer>
+        </article>
+
+        <!-- <article class="social-register">
+            <header>
+                <h1>${LocaleText[31]}</h1>
+            </header>
+
+            <div>
+                <a href="">
+                    <img src="/images/Google__G__Logo.svg" alt="Google platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/linkedin-logo.svg" alt="Linkedin platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/instagram-logo.svg" alt="Instagram platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/twitter-logo.svg" alt="Twitter platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/github-logo.svg" alt="Github platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/facebook-logo.svg" alt="Youtube platform logo" />
+                </a>
+                <a href="">
+                    <img src="/images/telegram-logo.svg" alt="Telegram platform logo" />
+                </a>
+            </div>
+        </article> -->
+
+        <article>
+            <header>
+                <a href="/login">${LocaleText[25]}</a>
+            </header>
+        </article>
+    </div>
+
+    <div id="otpPhase" hidden>
+        <article>
+            <div>
+                <div>
+                    <input type="number" id="receivedOTP" required />
+                    <label for="otp">${LocaleText[35]}</label>
+                </div>
+
+                <p>${LocaleText[41]}<span id="resendOTPTimer">2 Minutes</span></p>
+                <button id="resendOTPButton" onclick="registerPageSendOTP()" disabled>${LocaleText[42]}</button>
+
+                <!-- Warn user about terms & multiple register on SabzCity platform! -->
+                <p>${LocaleText[27]}</p>
+                <p><a href="/terms/">${LocaleText[28]}</a></p>
+            </div>
+
+            <footer>
+                <div class="right">
+                    <button type="button" onclick="registerPageToggleTermDialog()">
+                        <label>${LocaleText[24]}</label>
+                    </button>
+                    <button type="button" class=raised onclick="registerPageRegister()">
+                        <label>${LocaleText[23]}</label>
+                    </button>
+                </div>
+            </footer>
+        </article>
+
+        <div class="disabledBackground" id="termDialogBack" hidden></div>
+        <dialog type="modal" id="termDialog">
+            <header>${LocaleText[26]}</header>
+            <div>
+                <p>${LocaleText[30]}</p>
+            </div>
+            <footer>
+                <button type="button" onclick="registerPageToggleTermDialog()">
+                    <label>${LocaleText[29]}</label>
+                </button>
+            </footer>
+        </dialog>
+    </div>
+</main>

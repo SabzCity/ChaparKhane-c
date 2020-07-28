@@ -1,0 +1,42 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+article {
+    max-width: 600px;
+    margin: 16px auto;
+}
+
+article header {
+    text-align: center;
+}
+
+article header>h1 {
+    margin: 8px 0;
+}
+
+article header>a {
+    text-align: center;
+    padding: 32px;
+}
+
+article>div {
+    margin: 32px;
+}
+
+.typography--headline5 {
+    text-align: center;
+    margin: 16px 0;
+}
+
+.social-register img {
+    height: 28px;
+}
+
+.social-register div {
+    display: flex;
+    flex-direction: row;
+    text-align: center;
+}
+
+.captchaContainer {
+    display: flex;
+}

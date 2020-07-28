@@ -1,0 +1,32 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+dialog {
+    position: absolute;
+    margin-right: 0;
+    width: 300px;
+    top: 64px;
+    right: 48px;
+}
+
+li {
+    display: inline-block;
+    vertical-align: middle;
+    text-align: center;
+    height: 90px;
+    width: 60px;
+}
+
+.icons-font {
+    font-size: 30px;
+    margin-top: 20%;
+}
+
+.typography--body2 {
+    margin: auto;
+    display: table;
+}
+
+dialog>a {
+    text-align: center;
+    padding: 5%;
+}

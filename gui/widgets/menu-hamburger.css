@@ -1,0 +1,16 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+.typography--body2 {
+    text-transform: capitalize;
+}
+
+a svg {
+    vertical-align: middle;
+    width: 24px;
+    height: 24px
+}
+
+nav>h4 {
+    text-align: center;
+    margin: 0;
+}

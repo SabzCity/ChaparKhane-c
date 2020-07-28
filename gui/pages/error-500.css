@@ -1,0 +1,25 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+main {
+    padding-top: 20px;
+    text-align: center;
+}
+
+.gif_404 {
+    background-image: url(/images/404.gif);
+    height: 400px;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+.content {
+    margin-top: -50px;
+}
+
+main a {
+    max-width: 50%;
+    padding: 10px 20px;
+    margin: 20px 0;
+    background: var(--color--primary);
+    color: var(--color--primary--primary-on);
+}

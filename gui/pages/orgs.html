@@ -1,0 +1,86 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<header class="app-bar">
+    <span class="left">
+        ${Application.Widgets["hamburger-menu"].ConnectedCallback()}
+        <a href="/"><img alt="SabzCity logo" src="/images/app-icon-48x48.png" /></a>
+    </span>
+
+    <span class="center"></span>
+
+    <span class="right">
+        ${Application.Widgets["user-menu"].ConnectedCallback()}
+        ${Application.Widgets["service-menu"].ConnectedCallback()}
+    </span>
+</header>
+
+<main class="layout-grid">
+    <section class="span-4">
+        ${Application.UserPreferences.UsersState.ActiveUserID ? `
+        <article>
+            <header>
+                <h1>User joined organization</h1>
+            </header>
+            <section>
+                <div>
+                    <input type="text" id="findOrg" onchange="Application.Pages['orgs'].addUserOrgs(this.value)" />
+                    <label for="findOrg">Find a organization ... </label>
+                </div>
+
+                <span id="noOrgs" hidden> You have not joined organizations yet! </span>
+
+                <div id="userOrgs"></div>
+            </section>
+            <footer>
+                <button title="Add new project or transfer exiting organization to SabzCity" onclick="Application.Pages['orgs'].toggleRegisterOrgDialog()">
+                    <i class="icons-font">business</i>
+                    <label>New org</label>
+                </button>
+                <!-- Just login and approved person can access this dialog to create new org -->
+                <dialog id="registerOrgDialog">
+                    <header>
+                        <h2>Register new organization</h2>
+                        <p></p>
+                    </header>
+                    <section>
+                        <div>
+                            <input type="date" id="StartDate" onchange="" />
+                            <label for="StartDate">Start Date</label>
+                        </div>
+                        <div>
+                            <input type="date" id="EndDate" onchange="" />
+                            <label for="EndDate">End Date</label>
+                        </div>
+                    </section>
+                    <footer>
+                        <button type="button" onclick="Application.Pages['orgs'].cancelRegisterOrg()">
+                            <label>Cancel</label>
+                        </button>
+                        <button type="button" onclick="Application.Pages['orgs'].registerOrg()">
+                            <label>Register</label>
+                        </button>
+                    </footer>
+                </dialog>
+            </footer>
+        </article>
+        `: `
+        <article>
+            <a href="/landings/about-orgs">
+                Learn more about this page by click here
+            </a>
+        </article>
+
+        <article>
+            <a href="/login">
+                Login to add new project or transfer exiting organization to SabzCity
+            </a>
+        </article>
+        `}
+    </section>
+
+    <!-- Show all exiting organization by user order types and history -->
+    <section class="span-8 layout-grid">
+        <h2 class="span-12">Suggested Organizations</h2>
+        <div id="suggestedOrganizations"></div>
+    </section>
+</main>

@@ -1,0 +1,84 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+<button type="button" class="icon" onclick="toggleSearchDialog()" aria-haspopup="true" aria-controls="searchDialog" .aria-expanded=${this.searchDialogOpen} accesskey="s">
+    <i class="icons-font">search</i>
+</button>
+
+<div class="disabledBackground" id="searchDisabledBackground" onclick="toggleSearchDialog()" hidden></div>
+<!-- Query to categorized products can be : Name, OrgID, Tag, Brand, Distribution Centers, Price, Off,  -->
+<dialog type="modal" id="searchDialog">
+    <header>
+        <input type="search" id="textSearch" list="suggested" />
+        <label for="search">Search by text or picture</label>
+        <label for="camera">
+            <i class="icons-font">camera</i>
+        </label>
+        <input type="file" id="camera" accept="image;capture=camera" hidden />
+        <datalist id="suggested">
+            <option></option>
+        </datalist>
+    </header>
+
+    <div>
+        <section>
+            <h3>TAGS</h3>
+            <div>
+                <input type="text" id="tags" list="relatedTags">
+                <label for="tags">Filter by Tags</label>
+                <datalist id="relatedTags">
+                    <option>related tags to active tag</option>
+                </datalist>
+            </div>
+        </section>
+
+        <section>
+            <h3>Warehouse</h3>
+            <div>
+                <input type="range" id="warehouseDistance">
+                <label for="warehouseDistance">Filter product in near||far warehouse</label>
+            </div>
+        </section>
+
+        <!-- Filter and show all users last orders product ?? -->
+
+        <section>
+            <h3>Sort</h3>
+            <div>
+                <select id="sort">
+                    <option selected></option>
+                    <option value=1>Best Selling</option>
+                    <option value=2>Most popular</option>
+                    <option value=3>Most visited</option>
+                    <option value=4>Newest</option>
+                    <option value=5>Cheap</option>
+                    <option value=6>Expensive</option>
+                    <option value=7>Most discount</option>
+                </select>
+            </div>
+        </section>
+
+        <section>
+            <h3>Price</h3>
+            <div>
+                <input type="range" id="priceRange">
+                <label for="priceRange">Filter by price</label>
+            </div>
+        </section>
+
+        <section>
+            <h3>Brand</h3>
+            <div>
+                <input type="text" id="brandName">
+                <label for="brandName">Filter by brand||org name</label>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <button id="applyFilter" class="icon" title="Apply filters" onclick="this.applyFilter">
+            <i class="icons-font">check</i>
+        </button>
+        <button id="clearFilter" class="icon" title="Clear filters" onclick="this.clearFilter">
+            <i class="icons-font">clear</i>
+        </button>
+    </footer>
+</dialog>

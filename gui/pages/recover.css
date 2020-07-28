@@ -1,0 +1,37 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+.card {
+    max-width: 600px;
+    margin: 16px auto;
+    padding: 32px;
+}
+
+.typography--headline5 {
+    text-align: center;
+    margin: 16px 0;
+}
+
+.typography--headline6 {
+    text-align: center;
+    margin: 16px 0 0 0;
+}
+
+.input {
+    margin: 32px auto;
+}
+
+a {
+    text-decoration: none;
+    color: var(--color--primary);
+    text-align: center;
+    display: inline-block;
+}
+
+@media screen and (max-width: 480px) {
+    :host {
+        margin: 0 auto;
+    }
+    .card {
+        padding: 16px;
+    }
+}

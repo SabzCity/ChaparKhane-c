@@ -1,0 +1,51 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+main {
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+article {
+    margin: 16px 0;
+}
+
+article header>a {
+    text-align: center;
+    padding: 32px;
+}
+
+article .input {
+    margin: 32px;
+    text-align: center;
+}
+
+.typography--headline5 {
+    text-align: center;
+    margin: 16px 0;
+}
+
+.typography--subtitle1 {
+    text-align: center;
+    margin: 8px 0;
+}
+
+@media screen and (max-width: 480px) {
+    .card {
+        padding: 16px;
+    }
+    .card div.input {
+        margin: 32px 0;
+    }
+}
+
+.social-login img {
+    height: 28px;
+}
+
+.social-login div {
+    display: flex;
+    flex-direction: row;
+    text-align: center;
+    padding: 25px;
+}

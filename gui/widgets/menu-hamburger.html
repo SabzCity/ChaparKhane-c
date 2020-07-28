@@ -1,0 +1,61 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<button type="button" class="icon" onclick="toggleHamMenu()" title="${LocaleText[4]}" aria-haspopup="true" aria-controls="hamMenu" aria-expanded="${Application.Widgets['hamburger-menu'].dialogOpen}" accesskey="H">
+    <svg viewBox="0 0 24 24">
+        <path d="M3,6H21V8H3V6M3,11H21V13H3V11M3,16H21V18H3V16Z" />
+    </svg>
+</button>
+
+<div class="disabledBackground" id="hamDisabledBackground" onclick="toggleHamMenu()" hidden></div>
+<dialog type="modal" class="drawer" id="hamMenu">
+    <!-- Show active service details -->
+    <header>
+        <h3>${Application.ActivePage.Info.Name}</h3>
+        <h6>${Application.ActivePage.Info.Slogan}</h6>
+    </header>
+
+    <hr />
+
+    <div>
+        <nav title="${LocaleText[3]}">
+            <h4>${LocaleText[3]}</h4>
+
+            <ul>
+                ${Application.ActivePage.Related.map(s =>`
+                <li>
+                    <a href="${'/' + s}">
+                        <i class="icons-font">${Application.Pages[s].Icon}</i>
+                        <span class="typography--body2">${Application.Pages[s].Info.ShortName}</span>
+                    </a>
+                </li>
+                `).join("")}
+
+                <hr />
+
+                <li>
+                    <a href="${'/landings/about-' + Application.ActivePage.ID}">
+                        <i class="icons-font">details</i>
+                        <span class="typography--body2">${LocaleText[5]}</span>
+                    </a>
+                </li>
+                <li ${Application.ActivePage.ID==="localize" ? 'checked' : ''}>
+                    <a href="/localize">
+                        <i class="icons-font">language</i>
+                        <span class="typography--body2">${LocaleText[1]}</span>
+                    </a>
+                </li>
+                <li ${Application.ActivePage.ID==="terms" ? 'checked' : ''}>
+                    <a href="/terms">
+                        <svg viewBox="20 20 65 65">
+                            <path d="M57.466,21.248h-23.07c-3.044,0-5.521,2.477-5.521,5.521v46.463c0,3.044,2.477,5.521,5.521,5.521h31.209  c3.044,0,5.521-2.477,5.521-5.521V35.1L57.466,21.248z M58.629,28.125l5.715,5.795h-5.715V28.125z M67.125,73.231  c0,0.839-0.682,1.521-1.521,1.521H34.396c-0.839,0-1.521-0.682-1.521-1.521V26.769c0-0.839,0.682-1.521,1.521-1.521h20.233V37.92  h12.496V73.231z M38.824,68.72h22.352v-4H38.824V68.72z M38.824,58.16h22.352v-4H38.824V58.16z M38.824,47.6h22.352v-4H38.824V47.6z" />
+                        </svg>
+                        <span class="typography--body2">${LocaleText[2]}</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Share page!! -->
+        <!-- User see its activity in hamburger menu!?? use browser related api -->
+    </div>
+</dialog>

@@ -1,0 +1,237 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+main {
+    position: relative;
+}
+
+.header-background {
+    position: absolute;
+    top: 0;
+    background-color: var(--color--primary);
+    height: 300px;
+    width: 100%;
+    display: block;
+    z-index: -9;
+}
+
+.section-header .title {
+    max-width: 700px;
+    margin: 0 auto;
+    text-align: center;
+    padding: 1.5em;
+    color: var(--color--primary--primary-on);
+}
+
+.section-header h1 {
+    font-size: 2.125em;
+    font-weight: 300;
+}
+
+.section-header h4 {
+    font-size: 1em;
+    margin-top: 1.25em;
+    font-weight: 300;
+}
+
+.modal .col {
+    padding: 0;
+}
+
+.modal .control-label {
+    font-size: 14px;
+    text-transform: capitalize;
+    top: 0.5rem;
+}
+
+.modal-content .form-group {
+    margin-top: 36px;
+}
+
+.modal-content .modal-title {
+    padding-right: 48px;
+    font-size: 20px;
+    font-weight: 500;
+    text-transform: capitalize;
+}
+
+.avatar-background {
+    height: 300px;
+    overflow: hidden;
+    position: relative;
+}
+
+.avatar-background img {
+    position: absolute;
+    left: 0;
+    top: 0;
+}
+
+.avatar-info {
+    width: 100%;
+    background-color: var(--color--surface);
+    display: inline-flex;
+    align-items: center;
+    flex-direction: row;
+}
+
+.avatar-info img {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    margin: 24px;
+}
+
+.avatar-info .info {
+    text-transform: capitalize;
+    font-weight: 400;
+}
+
+.avatar-info .info .name {
+    font-size: 1.5em;
+    padding-bottom: 0.35em;
+}
+
+.avatar-info .info .nickname {
+    font-size: 0.875em;
+    color: var(--color--surface--secondary-on);
+}
+
+.avatar-info>*>i {
+    position: absolute;
+    top: 324px;
+    right: 24px;
+    opacity: 57%;
+}
+
+.card {
+    padding: 24px;
+    text-transform: capitalize;
+    opacity: 87%;
+}
+
+.user-setting .card-title {
+    font-size: 20px;
+    font-weight: 500;
+    text-transform: capitalize;
+    width: 100%;
+    display: inline-flex;
+    flex-direction: row;
+}
+
+.user-setting .card-title i {
+    position: absolute;
+    right: 24px;
+    width: 24px;
+    height: 24px;
+    opacity: 57%;
+}
+
+.user-setting .info-section {
+    display: inline-flex;
+    flex-direction: row;
+    width: 72%;
+    padding-top: 24px;
+}
+
+.user-setting .info-section .info-title .head {
+    opacity: 57%;
+    font-weight: 500;
+    font-size: 14px;
+    padding-bottom: 6px;
+}
+
+.user-setting .info-section .info-title .sub-head {
+    font-weight: 400;
+    font-size: 16px;
+    opacity: 87%;
+}
+
+.user-setting .info-section .public-status {
+    margin-top: 8px;
+    position: absolute;
+    right: 24px;
+    width: 24px;
+    height: 24px;
+}
+
+.public-status .dialog-content {
+    padding: 24px 0 16px 0;
+    width: 400px;
+    right: 0;
+    position: absolute;
+    text-transform: capitalize;
+    box-shadow: var(--shadow--box--elevation-3dp);
+    background-color: var(--color--surface);
+}
+
+.public-status .dialog-content .status-title {
+    font-size: 14px;
+    font-weight: 500;
+    opacity: 57%;
+    padding-bottom: 8px;
+    padding-left: 24px;
+}
+
+.public-status .dialog-content .status-row {
+    padding: 16px 50px 16px 24px;
+}
+
+.public-status .dialog-content .status-row:hover {
+    background-color: var(--color--primary--light);
+}
+
+.public-status .dialog-content .status-toggle a>* {
+    display: inline-flex;
+    flex-direction: row;
+    width: 326px;
+}
+
+.public-status .dialog-content .status-toggle i {
+    width: 24px;
+    height: 24px;
+    padding-right: 16px;
+}
+
+.public-status .dialog-content .status-toggle .active {
+    position: absolute;
+    right: 0;
+    width: 24px;
+    height: 24px;
+    right: 24px;
+    margin-top: 5px;
+}
+
+.public-status .dialog-content .status-toggle .status-row span {
+    font-size: 16px;
+}
+
+.public-status .dialog-content .status-toggle .status-row span:first-of-type {
+    font-weight: 500;
+    opacity: 87%;
+    padding-bottom: 8px;
+}
+
+.public-status .dialog-content .status-toggle .status-row span:last-of-type {
+    text-transform: none;
+    font-weight: 400;
+    opacity: 57%;
+    font-size: 14px;
+}
+
+.approve-status>label {
+    position: absolute;
+    right: 64px;
+    margin-top: 3px;
+    text-align: center;
+}
+
+.approve-status>label .txt {
+    text-transform: uppercase;
+    font-size: 8px;
+    font-weight: 500;
+}
+
+.approve-status>label .not-approved i {
+    margin-top: 10px;
+    margin-right: 8px;
+}

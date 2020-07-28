@@ -1,0 +1,64 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+body {
+    background-color: var(--color--surface)
+}
+
+body>header {
+    box-shadow: none;
+}
+
+main>header {
+    text-align: center;
+    max-width: 750px;
+    margin: 80px auto;
+}
+
+.button-container {
+    text-align: center;
+}
+
+.button-container a {
+    display: inline-block;
+    width: 245px;
+    height: 20px;
+    background-color: var(--color--secondary);
+    color: var(--color--secondary--primary-on);
+    padding: 15px;
+    margin: 7px;
+}
+
+.button-container button.outlined {
+    height: 50px;
+    width: 275px;
+    margin: 10px;
+}
+
+.layout-grid {
+    text-align: center;
+    justify-items: center;
+    margin-top: 120px;
+}
+
+h3::after {
+    content: "";
+    display: block;
+    width: 75px;
+    height: 2px;
+    margin: 10px auto;
+    background-color: var(--color--primary);
+}
+
+main footer {
+    text-align: center;
+    max-width: 750px;
+    margin: 80px auto 0;
+}
+
+main>footer>a {
+    display: unset;
+}
+
+main>footer img {
+    height: 28px;
+}

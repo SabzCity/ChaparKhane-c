@@ -1,0 +1,65 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<header class="app-bar">
+    <span class="left">
+        ${Application.Widgets["hamburger-menu"].ConnectedCallback()}
+        <a href="/"><img alt="SabzCity logo" src="/images/app-icon-48x48.png" /></a>
+    </span>
+
+    <span class="center"></span>
+
+    <span class="right">
+        ${Application.Widgets["user-menu"].ConnectedCallback()}
+        ${Application.Widgets["service-menu"].ConnectedCallback()}
+    </span>
+</header>
+
+<main id="container">
+    <h1 class="typography--headline5">${LocaleText[20]}</h1>
+
+    <section id="select" class="card">
+        <h2 class="typography--headline6">${LocaleText[21]}</h2>
+
+        <form id="recover" class="input">
+            <input type="radio" name="recover" id="forget" value="forget" checked />
+            <label for="forget"> Forget password </label> <br />
+            <input type="radio" name="recover" id="block" value="block" />
+            <label for="block"> Activate block account </label> <br />
+            <input type="radio" name="recover" id="old" value="old" />
+            <label for="old"> Reactivate old account </label> <br />
+            <input type="radio" name="recover" id="steal" value="steal" />
+            <label for="steal"> Someone use your identity information like email or username! </label> <br />
+        </form>
+
+        <footer>
+            <div class="right">
+                <button type=button form=recover onclick="Application.Pages['recover'].next()" raised>Next</button>
+            </div>
+        </footer>
+    </section>
+
+    <section id="validate" class="card" hidden>
+        <h2 class="typography--headline6">Please enter your Username or Email</h2>
+
+        <div id="input">
+            <input type="username" id="username" />
+            <label for="username"> Username </label>
+            <input type="email" id="email" />
+            <label for="email"> Email </label>
+        </div>
+
+        <footer>
+            <div class="right">
+                <button onclick="Application.Pages['recover'].back()">Back</button>
+                <button class=raised>Submit</button>
+            </div>
+        </footer>
+    </section>
+
+    <div class="card typography--subtitle2">
+        <a href="">
+            If you ever encountered a problem or irregularities, you can easily have an online chat with our
+            supporting staff
+        </a>
+    </div>
+</main>

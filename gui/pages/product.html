@@ -1,0 +1,208 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<header>
+    <span class="left">
+        ${Application.Widgets["hamburger-menu"].ConnectedCallback()}
+        <a href="/"><img alt="SabzCity logo" src="/images/app-icon-48x48.png" /></a>
+    </span>
+
+    <span class="center">
+        <widget-product-search></widget-product-search>
+    </span>
+
+    <span class="right">
+        ${Application.Widgets["user-menu"].ConnectedCallback()}
+        ${Application.Widgets["service-menu"].ConnectedCallback()}
+    </span>
+</header>
+
+<main>
+    <article class="layout-grid" title="Product detail" typeof="Product">
+        <h1 class="span-12">${w.Name}</h1>
+        <div class="span-4 layout-grid imgLayout-grid">
+            <div class="span-12" id="buttonBar1">
+                <button class="icon" title="Compare">
+                    <i class="icons-font">compare_arrows</i>
+                </button>
+                <button class="icon" title="Show price chart" onclick>
+                    <i class="icons-font">show_chart</i>
+                </button>
+                <button role=switch class="icon" title="Like!" id="likeButton" onclick="Application.Pages['product'].toggleLikeProduct()">
+                    <i class="icons-font">favorite_border</i>
+                    <i class="icons-font" hidden>favorite</i>
+                </button>
+            </div>
+            <img class="span-12 " src="${w.Pictures[0]}" alt="${w.Name}" title="Product picture" property="image" id="bigImg" />
+            <div role="tablist" class=" span-12 scrollable">
+                <img role="tab" src="../images/forTest/1985080.jpg" title="Product picture" property="image">
+                <img role="tab" src="../images/forTest/1985155.jpg" title="Product picture" property="image">
+                <img role="tab" src="../images/forTest/1985155.jpg" title="Product picture" property="image">
+                <img role="tab" src="../images/forTest/1985155.jpg" title="Product picture" property="image">
+                <img role="tab" src="../images/forTest/1985155.jpg" title="Product picture" property="image">
+                <!-- <img class="smallImg" src="../images/forTest/1985479.jpg" title="Product picture" property="image"> -->
+            </div>
+        </div>
+        <div class="span-8 layout-grid detailLayout-grid">
+            <div class="span-8">
+
+                <!--                <a href="">-->
+                <!--                    <span title="Product brand"></span>-->
+                <!--                </a>-->
+
+                <section id="AboutThis">
+                    <h2>About this commodity</h2>
+                    <ul>
+                        <li>Lorem ipsum dolor.</li>
+                        <li>Dolor sit amet consectetur adipisicing elit.</li>
+                        <li>Amet consectetur adipisicing elit. Consequuntur, voluptate!</li>
+                        <li>Cconsectetur adipisicing elit. Similique vero eligendi eius</li>
+                        <li> adipisicing elit. Similique vero eligendi eius, ut mollitia cumque?</li>
+                        <li>Similique vero eligendi eius, ut mollitia</li>
+                        <li>Vero eligendi eius, ut mollitia Cconsectetur adipisicing elit Lorem ipsum dolor sit amet consectetur adipisicing elit. Eum harum fuga hic.</li>
+                        <li>Amet consectetur adipisicing elit. Consequuntur, voluptate!</li>
+                        <li>Cconsectetur adipisicing elit. Similique vero eligendi eius</li>
+                        <li> adipisicing elit. Similique vero eligendi eius, ut mollitia cumque?</li>
+                        <li>Similique vero eligendi eius, ut mollitia</li>
+                    </ul>
+                </section>
+
+                <section>
+                    <a href="${'/store?tags=' + w.Tags.join("&tags=")}" title="Product tags">
+                        ${w.Tags.map(t => `
+                        <a href="${'/store?tags=' + t}"><span title="Product tag">${t}</span></a>
+                        `).join("")}
+                    </a>
+
+                    <span title="related tags to this tags or product"></span>
+                </section>
+
+                <a href="">
+                    <span title="Seller organization name"></span>
+                </a>
+            </div>
+            <div class="span-4 upperSurface" id="upperSurface1">
+                <section property="aggregateRating" typeof="AggregateRating">
+                    <a href="#CustomerReviews">
+                        <span title="Product quality stars" property="ratingValue">
+                            <i class="icons-font">star</i>
+                            <i class="icons-font">star</i>
+                            <i class="icons-font">star</i>
+                            <i class="icons-font">star_half</i>
+                            <i class="icons-font">star_border</i>
+                        </span>
+                        <span title="User give stars number" property="ratingValue">4.5</span><br />
+                        <span title="Number of user give stars " property="reviewCount">1589 customer reviews</span>
+                    </a>
+                    <hr />
+                </section>
+
+                <section>
+                    <a href="#"><span title="Company Imformation" property="" id="seller"> Made in IRAN by PARS KHAZAR</span></a><br />
+                    <hr />
+                </section>
+
+                <section property="offers" typeof="Offer">
+                    <a href="#" title="Price Chart"><del title="Real price" ${p.DiscountPercent> 0 ? "" : "hidden" }>${p.RealPrice}</del>
+                        <span title="Discount percent" ${p.DiscountPercent>0 ? "" :"hidden" }>${p.DiscountPercent}%</span>
+                        <ins title="Payable price" property="price" content="${p.PayablePrice}">${p.PayablePrice}</ins>
+                        <span title="Currency">${Application.UserPreferences.ContentPreferences.Currency.symbol}</span>
+                    </a>
+
+
+                    <!-- <span title="Discount end time">6:27:15</span> -->
+                    <!--<progress title="Discount claimed bar" max="100" value="30"> 30% </progress> this is not necessary here -->
+                    <!--<span title="Discount claimed percent"></span> this is not necessary here-->
+                    <hr />
+                </section>
+
+                <section>
+                    <a href="#"><span title="Guaranty Ditail" property=""> 12 month Guaranty by SabzCityGuaranty</span></a><br />
+                    <hr />
+                </section>
+
+                <section>
+                    <a href="#"><span title="Send & Delivery Ditail" property=""> Send next 2 work Day</span></a><br />
+                    <hr />
+                </section>
+
+                <button id="addToCard" class="raised extended" onclick="Application.Pages['product'].addToCard(w.ID)" aria-haspopup="true" aria-controls="addToCardDialog">
+                    <label>Add to card</label>
+                    <i class="icons-font">add_shopping_cart</i>
+                </button>
+                <dialog id="addToCardDialog" class="span-4" ?open=${this.addToCardDialogOpen}>
+                    <select id="warehouses">
+                        <option></option>
+                    </select>
+                    <label for="warehouses">Warehouses order by near to user</label>
+
+                    <select id="number">
+                        <option>1</option>
+                        <option>2</option>
+                        <option>3</option>
+                        <option>4</option>
+                    </select>
+                    <label for="number">How many product add to card</label>
+                </dialog>
+            </div>
+        </div>
+
+
+        <div class="span-12">
+            <div role="tablist" class=" span-12 scrollable mainTabBar">
+                <button title="Product Description" class="mainTab " role="tab" checked aria-selected="true" tabindex="0" id="tab-1">
+                    <label>Description</label>
+                </button>
+                <button title="Product Information" class=" mainTab" role="tab" aria-selected="false" tabindex="-1" id="tab-2">
+                    <label>Information</label>
+                </button>
+                <button title="Customer Reviews" class="mainTab " role="tab" aria-selected="false" tabindex="-1" id="tab-3">
+                    <label>Reviews</label>
+                </button>
+                <button title="Customer questions & answers" class=" mainTab " role="tab" aria-selected="false" tabindex="-1" id="tab-3">
+                    <label>Q & A</label>
+                </button>
+            </div>
+            <div class="mainTabContent">
+                <div class="span-12 ">
+                    <section>
+                        <div role="tablist" class=" span-12 scrollable secendTabBar ">
+                            <button title="Summary" class="secendTab" role="tab" checked aria-selected="true" tabindex="0" id="tab-1">
+                                <label>Summary</label>
+                            </button>
+                            <button title="Analysis" class="secendTab" role="tab" aria-selected="false" tabindex="-1" id="tab-2">
+                                <label>Analysis</label>
+                            </button>
+                            <button title="Company Imformation" class="secendTab" role="tab" aria-selected="false" tabindex="-1" id="tab-3">
+                                <label>COMPANY</label>
+                            </button>
+                            <button title="Guaranty Ditail" class="secendTab" role="tab" aria-selected="false" tabindex="-1" id="tab-3">
+                                <label>Guaranty</label>
+                            </button>
+                        </div>
+                        <h2>description</h2>
+                    </section>
+                </div>
+
+
+                <section>
+                    <h2>Product information</h2>
+                </section>
+
+                <section id="CustomerReviews" class="layout-grid">
+                    <h2>Customer reviews</h2>
+                    <div title="Customer images tag this product ID in pictures service"></div>
+                </section>
+
+                <section>
+                    <h2>Customer questions & answers</h2>
+                </section>
+            </div>
+        </div>
+    </article>
+    <article class="layout-grid">
+        <section>
+            <h2 class="span-12">Suggested products</h2>
+        </section>
+    </article>
+
+</main>
