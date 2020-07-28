@@ -1,0 +1,12 @@
+[submodule "libgo"]
+	path = libgo
+	url = https://github.com/SabzCity/libgo
+	branch = master
+[submodule "gui/libjs"]
+	path = gui/libjs
+	url = https://github.com/SabzCity/libjs
+	branch = master
+[submodule "gui/design-languages"]
+	path = gui/design-languages
+	url = https://github.com/SabzCity/design-languages
+	branch = master
