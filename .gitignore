@@ -1,3 +1,6 @@
+# Secrets files in secret folders
+secret/
+
 # Prerequisites
 *.d
 
@@ -21,6 +24,7 @@
 *.a
 *.la
 *.lo
+assets--g.go
 
 # Shared objects (inc. Windows DLLs)
 *.dll
@@ -50,3 +54,31 @@ modules.order
 Module.symvers
 Mkfile.old
 dkms.conf
+
+# Architecture specific extensions/prefixes
+*.[568vq]
+[568vq].out
+
+*.cgo1.go
+*.cgo2.c
+_cgo_defun.c
+_cgo_gotypes.go
+_cgo_export.*
+
+_testmain.go
+
+*.exe
+*.prof
+
+# external packages folder
+images/
+vendor/
+*node_modules*
+*bower_components*
+*bundle.*
+*yarn-error\.log
+*yarn\.lock
+*-old
+
+# Log data
+*.log

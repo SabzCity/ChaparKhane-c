@@ -1,0 +1,18 @@
+# SabzCity platform systemd service file
+
+[Unit]
+Description=SabzCity Platform Development Phase
+Documentation=http://www.sabz.city/developers
+After=network.target
+
+[Service]
+#CPUQuota=200%
+#MemoryLimit=1536M
+#ExecStartPre=
+ExecStart=/root/sabz.city/gui-dev
+Restart=on-failure
+TimeoutSec=20
+RestartSec=20
+
+[Install]
+WantedBy=multi-user.target
