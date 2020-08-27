@@ -1,15 +1,17 @@
 # SabzCity platform systemd service file
+# https://www.freedesktop.org/software/systemd/man/systemd.service.html
 
 [Unit]
 Description=SabzCity Platform
-Documentation=http://www.sabz.city/developers
+Documentation=https://www.sabz.city/developers
 After=network.target
 
 [Service]
-#CPUQuota=200%
-#MemoryLimit=1536M
+#CPUQuota=98%
+#MemoryLimit=15360M
 #ExecStartPre=
 ExecStart=/root/sabz.city/sabz.city
+ExecReload=/bin/kill -SIGUSR1 $MAINPID
 Restart=on-failure
 TimeoutSec=20
 RestartSec=20

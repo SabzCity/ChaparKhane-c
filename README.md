@@ -73,3 +73,6 @@ e.g.
 ### VSC
 You must set this in settings to adjust formatter to fit this project before contributes
 - html.format.wrapLineLength = 0
+
+## [Bug Bounty Program](https://en.wikipedia.org/wiki/Bug_bounty_program)
+If you find a bug please send a PR. But if you want to sell to others, first contact us by send email to ICTATSABZDOTCITY to negotiate about the price!

@@ -2,14 +2,15 @@
 
 [Unit]
 Description=SabzCity Platform Development Phase
-Documentation=http://www.sabz.city/developers
+Documentation=https://www.sabz.city/developers
 After=network.target
 
 [Service]
-#CPUQuota=200%
-#MemoryLimit=1536M
+#CPUQuota=98%
+#MemoryLimit=15360M
 #ExecStartPre=
 ExecStart=/root/sabz.city/gui-dev
+ExecReload=/bin/kill -SIGUSR1 $MAINPID
 Restart=on-failure
 TimeoutSec=20
 RestartSec=20

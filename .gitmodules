@@ -2,11 +2,14 @@
 	path = libgo
 	url = https://github.com/SabzCity/libgo
 	branch = master
+    ignore = dirty
 [submodule "gui/libjs"]
 	path = gui/libjs
 	url = https://github.com/SabzCity/libjs
 	branch = master
+    ignore = dirty
 [submodule "gui/design-languages"]
 	path = gui/design-languages
 	url = https://github.com/SabzCity/design-languages
 	branch = master
+    ignore = dirty
