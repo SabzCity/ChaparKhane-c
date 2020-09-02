@@ -14,8 +14,8 @@ import (
 
 const (
 	personAuthenticationStructureID uint64 = 2759743017265268907
-
-	personAuthenticationFixedSize uint64 = 343 // 72 + 263 + (1 * 8) >> Common header + Unique data + vars add&&len
+	personAuthenticationFixedSize   uint64 = 237 // 72 + 165 + (0 * 8) >> Common header + Unique data + vars add&&len
+	personAuthenticationState       uint8  = ganjine.DataStructureStatePreAlpha
 )
 
 // PersonAuthentication store real person authenticate data.
@@ -34,13 +34,10 @@ type PersonAuthentication struct {
 	ReferentPersonID [16]byte
 	Status           personAuthenticationStatus
 	// Person Authentication Factors https://en.wikipedia.org/wiki/Authentication#Factors_and_identity
-	PasswordHash  [32]byte // 256 bit SHA3-256 (Just SHA3)
+	PasswordHash  [32]byte
 	OTPPattern    [32]byte // https://tools.ietf.org/html/rfc6238
 	OTPAdditional int32    // 4 to 7 digit. https://en.wikipedia.org/wiki/Personal_identification_number
-	// RecoveryData
-	RecoveryCode     [128]byte
-	SecurityQuestion uint16 // https://en.wikipedia.org/wiki/Security_question
-	SecurityAnswer   string // https://en.wikipedia.org/wiki/Security_question
+	SecurityKey   [32]byte
 }
 
 type personAuthenticationStatus uint8
@@ -62,7 +59,7 @@ const (
 // Set method set some data and write entire PersonAuthentication record!
 func (pa *PersonAuthentication) Set() (err error) {
 	pa.RecordStructureID = personAuthenticationStructureID
-	pa.RecordSize = personAuthenticationFixedSize + uint64(len(pa.SecurityAnswer))
+	pa.RecordSize = pa.syllabLen()
 	pa.WriteTime = etime.Now()
 	pa.OwnerAppID = server.Manifest.AppID
 
@@ -146,7 +143,7 @@ func (pa *PersonAuthentication) IndexPersonID() {
 func (pa *PersonAuthentication) IndexRegisterTime() {
 	var personIDIndex = gs.SetIndexHashReq{
 		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pa.hashWriteTime(),
+		IndexHash: pa.hashWriteTimeHourly(),
 		RecordID:  pa.RecordID,
 	}
 	var err = gsdk.SetIndexHash(cluster, &personIDIndex)
@@ -186,8 +183,8 @@ func (pa *PersonAuthentication) hashPersonID() (hash [32]byte) {
 	return sha512.Sum512_256(buf)
 }
 
-// HashPersonID hash personAuthenticationStructureID + pa.WriteTime(round to hour)
-func (pa *PersonAuthentication) hashWriteTime() (hash [32]byte) {
+// hashWriteTimeHourly hash personAuthenticationStructureID + pa.WriteTime(round to hour)
+func (pa *PersonAuthentication) hashWriteTimeHourly() (hash [32]byte) {
 	var buf = make([]byte, 16) // 8+8
 
 	buf[0] = byte(pa.RecordStructureID)
@@ -250,39 +247,31 @@ func (pa *PersonAuthentication) syllabDecoder(buf []byte) (err error) {
 	copy(pa.PasswordHash[:], buf[137:])
 	copy(pa.OTPPattern[:], buf[169:])
 	pa.OTPAdditional = int32(buf[201]) | int32(buf[202])<<8 | int32(buf[203])<<16 | int32(buf[204])<<24
-	copy(pa.RecoveryCode[:], buf[205:])
-	pa.SecurityQuestion = uint16(buf[333]) | uint16(buf[334])<<8
-	var SecurityAnswerAdd = uint32(buf[335]) | uint32(buf[336])<<8 | uint32(buf[337])<<16 | uint32(buf[338])<<24
-	var SecurityAnswerLen = uint32(buf[339]) | uint32(buf[340])<<8 | uint32(buf[341])<<16 | uint32(buf[342])<<24
-	// It must check len of every heap access but due to encode of data is safe proccess, skip it here!
-	pa.SecurityAnswer = string(buf[SecurityAnswerAdd:SecurityAnswerLen])
+	copy(pa.SecurityKey[:], buf[205:])
 
 	return
 }
 
 func (pa *PersonAuthentication) syllabEncoder() (buf []byte) {
-	var hsi int = int(personAuthenticationFixedSize) // Heap start index
-	var ln int                                       // len of buf that include len of string, slices, maps, ...
-	ln = hsi + len(pa.SecurityAnswer)
-	buf = make([]byte, ln)
+	buf = make([]byte, pa.syllabLen())
 
 	// copy(buf[0:], pa.RecordID[:])
-	buf[32] = byte(pa.RecordSize)
-	buf[33] = byte(pa.RecordSize >> 8)
-	buf[34] = byte(pa.RecordSize >> 16)
-	buf[35] = byte(pa.RecordSize >> 24)
-	buf[36] = byte(pa.RecordSize >> 32)
-	buf[37] = byte(pa.RecordSize >> 40)
-	buf[38] = byte(pa.RecordSize >> 48)
-	buf[39] = byte(pa.RecordSize >> 56)
-	buf[40] = byte(pa.RecordStructureID)
-	buf[41] = byte(pa.RecordStructureID >> 8)
-	buf[42] = byte(pa.RecordStructureID >> 16)
-	buf[43] = byte(pa.RecordStructureID >> 24)
-	buf[44] = byte(pa.RecordStructureID >> 32)
-	buf[45] = byte(pa.RecordStructureID >> 40)
-	buf[46] = byte(pa.RecordStructureID >> 48)
-	buf[47] = byte(pa.RecordStructureID >> 56)
+	buf[32] = byte(pa.RecordStructureID)
+	buf[33] = byte(pa.RecordStructureID >> 8)
+	buf[34] = byte(pa.RecordStructureID >> 16)
+	buf[35] = byte(pa.RecordStructureID >> 24)
+	buf[36] = byte(pa.RecordStructureID >> 32)
+	buf[37] = byte(pa.RecordStructureID >> 40)
+	buf[38] = byte(pa.RecordStructureID >> 48)
+	buf[39] = byte(pa.RecordStructureID >> 56)
+	buf[40] = byte(pa.RecordSize)
+	buf[41] = byte(pa.RecordSize >> 8)
+	buf[42] = byte(pa.RecordSize >> 16)
+	buf[43] = byte(pa.RecordSize >> 24)
+	buf[44] = byte(pa.RecordSize >> 32)
+	buf[45] = byte(pa.RecordSize >> 40)
+	buf[46] = byte(pa.RecordSize >> 48)
+	buf[47] = byte(pa.RecordSize >> 56)
 	buf[48] = byte(pa.WriteTime)
 	buf[49] = byte(pa.WriteTime >> 8)
 	buf[50] = byte(pa.WriteTime >> 16)
@@ -304,20 +293,11 @@ func (pa *PersonAuthentication) syllabEncoder() (buf []byte) {
 	buf[202] = byte(pa.OTPAdditional >> 8)
 	buf[203] = byte(pa.OTPAdditional >> 16)
 	buf[204] = byte(pa.OTPAdditional >> 24)
-	copy(buf[205:], pa.RecoveryCode[:])
-	buf[333] = byte(pa.SecurityQuestion)
-	buf[334] = byte(pa.SecurityQuestion >> 8)
-	ln = len(pa.SecurityAnswer)
-	buf[335] = byte(hsi)
-	buf[336] = byte(hsi >> 8)
-	buf[337] = byte(hsi >> 16)
-	buf[338] = byte(hsi >> 24)
-	buf[339] = byte(ln)
-	buf[340] = byte(ln >> 8)
-	buf[341] = byte(ln >> 16)
-	buf[342] = byte(ln >> 24)
-	copy(buf[343:], pa.SecurityAnswer[:])
-	// hsi += ln
+	copy(buf[205:], pa.SecurityKey[:])
 
 	return
+}
+
+func (pa *PersonAuthentication) syllabLen() uint64 {
+	return personAuthenticationFixedSize
 }
