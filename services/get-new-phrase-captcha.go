@@ -3,12 +3,14 @@
 package services
 
 import (
+	"bytes"
 	"encoding/base64"
+	"strconv"
 
 	"../libgo/achaemenid"
 	"../libgo/captcha"
 	"../libgo/http"
-	"../libgo/json"
+	"../libgo/syllab"
 )
 
 var getNewPhraseCaptchaService = achaemenid.Service{
@@ -63,11 +65,9 @@ func GetNewPhraseCaptchaHTTP(s *achaemenid.Server, st *achaemenid.Stream, httpRe
 		return
 	}
 
-	httpRes.Body, st.ReqRes.Err = res.jsonEncoder()
-	// st.ReqRes.Err make occur on just memory full!
-
 	httpRes.SetStatus(http.StatusOKCode, http.StatusOKPhrase)
 	httpRes.Header.SetValue(http.HeaderKeyContentType, "application/json")
+	httpRes.Body = res.jsonEncoder()
 }
 
 type getNewPhraseCaptchaReq struct {
@@ -82,18 +82,10 @@ type getNewPhraseCaptchaRes struct {
 
 func getNewPhraseCaptcha(st *achaemenid.Stream, req *getNewPhraseCaptchaReq) (res *getNewPhraseCaptchaRes, err error) {
 	var pc *captcha.PhraseCaptcha = phraseCaptchas.NewImage(req.Language, req.ImageFormat)
-
-	// TODO::: remove base64 in server and do it in client! first attempt failed! need more working on it! json encode problem??
 	res = &getNewPhraseCaptchaRes{
 		CaptchaID: pc.ID,
-		// Image:     pc.Image,
+		Image:     pc.Image,
 	}
-	res.Image = make([]byte, base64.StdEncoding.EncodedLen(len(pc.Image)))
-	base64.StdEncoding.Encode(res.Image, pc.Image)
-
-	// remove created image, due to we don't need it here anymore
-	pc.Image = nil
-
 	return
 }
 
@@ -102,22 +94,87 @@ func (req *getNewPhraseCaptchaReq) validator() (err error) {
 }
 
 func (req *getNewPhraseCaptchaReq) syllabDecoder(buf []byte) (err error) {
+	if len(buf) < 2 {
+		err = syllab.ErrSyllabDecodingFailedSmallSlice
+		return
+	}
+
+	req.Language = captcha.Language(buf[0])
+	req.ImageFormat = captcha.ImageFormat(buf[1])
 	return
 }
 
+// jsonDecoder decode minifed version as {"Language":0,"ImageFormat":0}
 func (req *getNewPhraseCaptchaReq) jsonDecoder(buf []byte) (err error) {
-	// TODO::: Help to complete json generator package to have better performance!
-	err = json.UnMarshal(buf, req)
+	var end bool
+	var comaL, colonL int // Coma & Colon location
+	var num uint64
+	for !end {
+		buf = buf[comaL+2:] // remove >>	'{"' 	&& 		',"'	due to don't need them
+		colonL = bytes.IndexByte(buf, ':')
+		comaL = bytes.IndexByte(buf, ',') // can check coma location if string type exist e.g. {"Language": "0,1,2","ImageFormat": 0}
+		if comaL < 0 {
+			// Reach last item and trailing comma not allowed!
+			comaL = len(buf) - 1
+			end = true
+		}
+		switch buf[0] { // Just check first letter first!
+		case 'L':
+			num, err = strconv.ParseUint(string(buf[colonL+1:comaL]), 10, 8)
+			if err != nil {
+				return
+			}
+			req.Language = captcha.Language(num)
+		case 'I':
+			num, err = strconv.ParseUint(string(buf[colonL+1:comaL]), 10, 8)
+			if err != nil {
+				return
+			}
+			req.ImageFormat = captcha.ImageFormat(num)
+		}
+	}
 	return
 }
 
 // offset add free space by given number at begging of return slice that almost just use in sRPC protocol! It can be 0!!
 func (res *getNewPhraseCaptchaRes) syllabEncoder(offset int) (buf []byte) {
+	var hsi int = 24                  // Heap start index || Stack size!
+	var ln int = hsi + len(res.Image) // len of strings, slices, maps, ...
+	buf = make([]byte, ln+offset)
+	var b = buf[offset:]
+
+	copy(b[0:], res.CaptchaID[:])
+	b[16] = byte(hsi) // Heap start index
+	b[17] = byte(hsi >> 8)
+	b[18] = byte(hsi >> 16)
+	b[19] = byte(hsi >> 24)
+	ln = len(res.Image)
+	b[20] = byte(ln)
+	b[21] = byte(ln >> 8)
+	b[22] = byte(ln >> 16)
+	b[23] = byte(ln >> 24)
+	copy(b[hsi:], res.Image)
 	return
 }
 
-func (res *getNewPhraseCaptchaRes) jsonEncoder() (buf []byte, err error) {
-	// TODO::: Help to complete json generator package to have better performance!
-	buf, err = json.Marshal(res)
+func (res *getNewPhraseCaptchaRes) jsonEncoder() (buf []byte) {
+	var fixedSizeData = 90 // 14+((16*3)+15)+11+...+2
+	var imageBase64Len = base64.StdEncoding.EncodedLen(len(res.Image))
+	buf = make([]byte, 0, fixedSizeData+imageBase64Len)
+	var ln int // temp var to indicate len of anything through logic
+
+	buf = append(buf, `{"CaptchaID":[`...)
+	for i := 0; i < 16; i++ {
+		buf = strconv.AppendUint(buf, uint64(res.CaptchaID[i]), 10)
+		buf = append(buf, ',')
+	}
+	buf = buf[:len(buf)-1] // remove trailing comma
+
+	buf = append(buf, `],"Image":"`...)
+	ln = len(buf)
+	buf = buf[:ln+imageBase64Len]
+	base64.StdEncoding.Encode(buf[ln:], res.Image)
+
+	buf = append(buf, `"}`...)
 	return
 }
