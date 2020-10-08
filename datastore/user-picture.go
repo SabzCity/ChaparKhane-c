@@ -9,17 +9,36 @@ import (
 	"../libgo/ganjine"
 	gsdk "../libgo/ganjine-sdk"
 	gs "../libgo/ganjine-services"
+	lang "../libgo/language"
 	"../libgo/picture"
 	"../libgo/syllab"
 )
 
 const (
 	userPictureStructureID uint64 = 9588981481850124477
-	userPictureFixedSize   uint64 = 154 // 72 + 82 + (0 * 8) >> Common header + Unique data + vars add&&len
-	userPictureState       uint8  = ganjine.DataStructureStatePreAlpha
 )
 
-// UserPicture store any user type e.g. person,org,... official pictures.
+var userPictureStructure = ganjine.DataStructure{
+	ID:                9588981481850124477,
+	IssueDate:         1599023751,
+	ExpiryDate:        0,
+	ExpireInFavorOf:   "", // Other structure name
+	ExpireInFavorOfID: 0,  // Other StructureID! Handy ID or Hash of ExpireInFavorOf!
+	Status:            ganjine.DataStructureStatePreAlpha,
+	Structure:         UserPicture{},
+
+	Name: map[lang.Language]string{
+		lang.EnglishLanguage: "UserPicture",
+	},
+	Description: map[lang.Language]string{
+		lang.EnglishLanguage: "store any user type e.g. person,org,... official pictures.",
+	},
+	TAGS: []string{
+		"",
+	},
+}
+
+// UserPicture ---Read locale description in userPictureStructure---
 type UserPicture struct {
 	/* Common header data */
 	RecordID          [32]byte
@@ -31,7 +50,7 @@ type UserPicture struct {
 	/* Unique data */
 	AppInstanceID    [16]byte // Store to remember which app instance set||chanaged this record!
 	UserConnectionID [16]byte // Store to remember which user connection set||chanaged this record!
-	UserID           [16]byte
+	UserID           [16]byte `ganjine:"Immutable,Unique"`
 	ObjectID         [32]byte // UUID of picture object.
 	Rating           picture.Rating
 	Status           userPictureStatus
@@ -85,7 +104,7 @@ func (up *UserPicture) GetByRecordID() (err error) {
 	}
 
 	if up.RecordStructureID != userPictureStructureID {
-		err = ganjine.ErrRecordMisMatchedStructureID
+		err = ganjine.ErrGanjineMisMatchedStructureID
 	}
 	return
 }
@@ -93,7 +112,7 @@ func (up *UserPicture) GetByRecordID() (err error) {
 // GetByUserID method find and read last version of record by given UserID
 func (up *UserPicture) GetByUserID() (err error) {
 	var indexReq = &gs.FindRecordsReq{
-		IndexHash: up.hashUserID(),
+		IndexHash: up.HashUserID(),
 		Offset:    18446744073709551615,
 		Limit:     0,
 	}
@@ -105,21 +124,26 @@ func (up *UserPicture) GetByUserID() (err error) {
 
 	var ln = len(indexRes.RecordIDs)
 	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	for {
-		ln--
+	ln--
+	for ; ln > 0; ln-- {
 		up.RecordID = indexRes.RecordIDs[ln]
 		err = up.GetByRecordID()
-		if err != ganjine.ErrRecordMisMatchedStructureID {
+		if err != ganjine.ErrGanjineMisMatchedStructureID {
 			return
 		}
 	}
+	return ganjine.ErrGanjineRecordNotFound
 }
+
+/*
+	-- PRIMARY INDEXES --
+*/
 
 // IndexUserID index up.UserID to retrieve record fast later.
 func (up *UserPicture) IndexUserID() {
 	var userIDIndex = gs.SetIndexHashReq{
 		Type:      gs.RequestTypeBroadcast,
-		IndexHash: up.hashUserID(),
+		IndexHash: up.HashUserID(),
 		RecordID:  up.RecordID,
 	}
 	var err = gsdk.SetIndexHash(cluster, &userIDIndex)
@@ -128,42 +152,36 @@ func (up *UserPicture) IndexUserID() {
 	}
 }
 
-func (up *UserPicture) hashUserID() (hash [32]byte) {
+// HashUserID hash userPictureStructureID + up.UserID
+func (up *UserPicture) HashUserID() (hash [32]byte) {
 	var buf = make([]byte, 24) // 8+16
-
-	buf[0] = byte(up.RecordStructureID)
-	buf[1] = byte(up.RecordStructureID >> 8)
-	buf[2] = byte(up.RecordStructureID >> 16)
-	buf[3] = byte(up.RecordStructureID >> 24)
-	buf[4] = byte(up.RecordStructureID >> 32)
-	buf[5] = byte(up.RecordStructureID >> 40)
-	buf[6] = byte(up.RecordStructureID >> 48)
-	buf[7] = byte(up.RecordStructureID >> 56)
-
+	syllab.SetUInt64(buf, 0, userPictureStructureID)
 	copy(buf[8:], up.UserID[:])
-
 	return sha512.Sum512_256(buf)
 }
 
+/*
+	-- Syllab Encoder & Decoder --
+*/
+
 func (up *UserPicture) syllabDecoder(buf []byte) (err error) {
-	if uint64(len(buf)) < userPictureFixedSize {
-		err = syllab.ErrSyllabDecodingFailedSmallSlice
+	if uint32(len(buf)) < up.syllabStackLen() {
+		err = syllab.ErrSyllabDecodeSmallSlice
 		return
 	}
 
-	copy(up.RecordID[:], buf[:])
-	up.RecordStructureID = uint64(buf[32]) | uint64(buf[33])<<8 | uint64(buf[34])<<16 | uint64(buf[35])<<24 | uint64(buf[36])<<32 | uint64(buf[37])<<40 | uint64(buf[38])<<48 | uint64(buf[39])<<56
-	up.RecordSize = uint64(buf[40]) | uint64(buf[41])<<8 | uint64(buf[42])<<16 | uint64(buf[43])<<24 | uint64(buf[44])<<32 | uint64(buf[45])<<40 | uint64(buf[46])<<48 | uint64(buf[47])<<56
-	up.WriteTime = int64(buf[48]) | int64(buf[49])<<8 | int64(buf[50])<<16 | int64(buf[51])<<24 | int64(buf[52])<<32 | int64(buf[53])<<40 | int64(buf[54])<<48 | int64(buf[55])<<56
+	copy(up.RecordID[:], buf[0:])
+	up.RecordStructureID = syllab.GetUInt64(buf, 32)
+	up.RecordSize = syllab.GetUInt64(buf, 40)
+	up.WriteTime = syllab.GetInt64(buf, 48)
 	copy(up.OwnerAppID[:], buf[56:])
 
 	copy(up.AppInstanceID[:], buf[72:])
 	copy(up.UserConnectionID[:], buf[88:])
 	copy(up.UserID[:], buf[104:])
 	copy(up.ObjectID[:], buf[120:])
-	up.Rating = picture.Rating(buf[152])
-	up.Status = userPictureStatus(buf[153])
-
+	up.Rating = picture.Rating(syllab.GetInt8(buf, 152))
+	up.Status = userPictureStatus(syllab.GetInt8(buf, 153))
 	return
 }
 
@@ -171,42 +189,28 @@ func (up *UserPicture) syllabEncoder() (buf []byte) {
 	buf = make([]byte, up.syllabLen())
 
 	// copy(buf[0:], up.RecordID[:])
-	buf[32] = byte(up.RecordStructureID)
-	buf[33] = byte(up.RecordStructureID >> 8)
-	buf[34] = byte(up.RecordStructureID >> 16)
-	buf[35] = byte(up.RecordStructureID >> 24)
-	buf[36] = byte(up.RecordStructureID >> 32)
-	buf[37] = byte(up.RecordStructureID >> 40)
-	buf[38] = byte(up.RecordStructureID >> 48)
-	buf[39] = byte(up.RecordStructureID >> 56)
-	buf[40] = byte(up.RecordSize)
-	buf[41] = byte(up.RecordSize >> 8)
-	buf[42] = byte(up.RecordSize >> 16)
-	buf[43] = byte(up.RecordSize >> 24)
-	buf[44] = byte(up.RecordSize >> 32)
-	buf[45] = byte(up.RecordSize >> 40)
-	buf[46] = byte(up.RecordSize >> 48)
-	buf[47] = byte(up.RecordSize >> 56)
-	buf[48] = byte(up.WriteTime)
-	buf[49] = byte(up.WriteTime >> 8)
-	buf[50] = byte(up.WriteTime >> 16)
-	buf[51] = byte(up.WriteTime >> 24)
-	buf[52] = byte(up.WriteTime >> 32)
-	buf[53] = byte(up.WriteTime >> 40)
-	buf[54] = byte(up.WriteTime >> 48)
-	buf[55] = byte(up.WriteTime >> 56)
+	syllab.SetUInt64(buf, 32, up.RecordStructureID)
+	syllab.SetUInt64(buf, 40, up.RecordSize)
+	syllab.SetInt64(buf, 48, up.WriteTime)
 	copy(buf[56:], up.OwnerAppID[:])
 
 	copy(buf[72:], up.AppInstanceID[:])
 	copy(buf[88:], up.UserConnectionID[:])
 	copy(buf[104:], up.UserID[:])
 	copy(buf[120:], up.ObjectID[:])
-	buf[152] = byte(up.Rating)
-	buf[153] = byte(up.Status)
-
+	syllab.SetUInt8(buf, 152, uint8(up.Rating))
+	syllab.SetUInt8(buf, 153, uint8(up.Status))
 	return
 }
 
-func (up *UserPicture) syllabLen() uint64 {
-	return userPictureFixedSize
+func (up *UserPicture) syllabStackLen() (ln uint32) {
+	return 154 // fixed size data + variables data add&&len
+}
+
+func (up *UserPicture) syllabHeapLen() (ln uint32) {
+	return
+}
+
+func (up *UserPicture) syllabLen() (ln uint64) {
+	return uint64(up.syllabStackLen() + up.syllabHeapLen())
 }

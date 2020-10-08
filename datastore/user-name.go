@@ -10,16 +10,35 @@ import (
 	"../libgo/ganjine"
 	gsdk "../libgo/ganjine-sdk"
 	gs "../libgo/ganjine-services"
+	lang "../libgo/language"
 	"../libgo/syllab"
 )
 
 const (
 	userNameStructureID uint64 = 12744998016788909151
-	userNameFixedSize   uint64 = 129 // 72 + 49 + (1 * 8) >> Common header + Unique data + vars add&&len
-	userNameState       uint8  = ganjine.DataStructureStatePreAlpha
 )
 
-// UserName store user name that translate it to UserID for any purpose like login, send message, ...!
+var userNameStructure = ganjine.DataStructure{
+	ID:                12744998016788909151,
+	IssueDate:         1599020151,
+	ExpiryDate:        0,
+	ExpireInFavorOf:   "", // Other structure name
+	ExpireInFavorOfID: 0,  // Other StructureID! Handy ID or Hash of ExpireInFavorOf!
+	Status:            ganjine.DataStructureStatePreAlpha,
+	Structure:         UserName{},
+
+	Name: map[lang.Language]string{
+		lang.EnglishLanguage: "UserName",
+	},
+	Description: map[lang.Language]string{
+		lang.EnglishLanguage: "store user name that translate it to UserID for any purpose like login, send message, ...!",
+	},
+	TAGS: []string{
+		"",
+	},
+}
+
+// UserName ---Read locale description in userNameStructure---
 type UserName struct {
 	/* Common header data */
 	RecordID          [32]byte
@@ -31,16 +50,17 @@ type UserName struct {
 	/* Unique data */
 	AppInstanceID    [16]byte // Store to remember which app instance set||chanaged this record!
 	UserConnectionID [16]byte // Store to remember which user connection set||chanaged this record!
-	UserID           [16]byte
-	Username         string // It is not replace of user ID! It usually use to find user by their friends!
-	Status           userNameStatus
+	UserID           [16]byte `ganjine:"Immutable,Unique"`
+	Username         string   `ganjine:"Immutable,Unique"` // It is not replace of user ID! It usually use to find user by their friends!
+	Status           UserNameStatus
 }
 
-type userNameStatus uint8
+// UserNameStatus indicate UserName record status
+type UserNameStatus uint8
 
 // UserName status
 const (
-	UserNameRegister userNameStatus = iota
+	UserNameRegister UserNameStatus = iota
 	UserNameRemove
 	UserNameBlockByJustice
 )
@@ -84,7 +104,7 @@ func (un *UserName) GetByRecordID() (err error) {
 	}
 
 	if un.RecordStructureID != userNameStructureID {
-		err = ganjine.ErrRecordMisMatchedStructureID
+		err = ganjine.ErrGanjineMisMatchedStructureID
 	}
 	return
 }
@@ -92,7 +112,7 @@ func (un *UserName) GetByRecordID() (err error) {
 // GetByUserID method find and read last version of record by given UserID
 func (un *UserName) GetByUserID() (err error) {
 	var indexReq = &gs.FindRecordsReq{
-		IndexHash: un.hashUserID(),
+		IndexHash: un.HashUserID(),
 		Offset:    18446744073709551615,
 		Limit:     0,
 	}
@@ -104,20 +124,21 @@ func (un *UserName) GetByUserID() (err error) {
 
 	var ln = len(indexRes.RecordIDs)
 	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	for {
-		ln--
+	ln--
+	for ; ln > 0; ln-- {
 		un.RecordID = indexRes.RecordIDs[ln]
 		err = un.GetByRecordID()
-		if err != ganjine.ErrRecordMisMatchedStructureID {
+		if err != ganjine.ErrGanjineMisMatchedStructureID {
 			return
 		}
 	}
+	return ganjine.ErrGanjineRecordNotFound
 }
 
 // GetByUserName method find and read last version of record by given UserName
 func (un *UserName) GetByUserName() (err error) {
 	var indexReq = &gs.FindRecordsReq{
-		IndexHash: un.hashUserName(),
+		IndexHash: un.HashUserName(),
 		Offset:    18446744073709551615,
 		Limit:     0,
 	}
@@ -129,150 +150,131 @@ func (un *UserName) GetByUserName() (err error) {
 
 	var ln = len(indexRes.RecordIDs)
 	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	for {
-		ln--
+	ln--
+	for ; ln > 0; ln-- {
 		un.RecordID = indexRes.RecordIDs[ln]
 		err = un.GetByRecordID()
-		if err != ganjine.ErrRecordMisMatchedStructureID {
+		if err != ganjine.ErrGanjineMisMatchedStructureID {
 			return
 		}
 	}
+	return ganjine.ErrGanjineRecordNotFound
 }
 
-// IndexUserName index un.UserName to retrieve record fast later.
-func (un *UserName) IndexUserName() {
-	var userNameIndex = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: un.hashUserName(),
-		RecordID:  un.RecordID,
-	}
-	var err = gsdk.SetIndexHash(cluster, &userNameIndex)
-	if err != nil {
-		// TODO::: we must retry more due to record wrote successfully!
-	}
-}
+/*
+	-- PRIMARY INDEXES --
+*/
 
-// IndexUserID index un.UserID to retrieve record fast later.
+// IndexUserID index Unique-Field(UserID) chain to retrieve last record version fast later.
+// Call in each update to the exiting record!
 func (un *UserName) IndexUserID() {
-	var userIDIndex = gs.SetIndexHashReq{
+	var indexRequest = gs.SetIndexHashReq{
 		Type:      gs.RequestTypeBroadcast,
-		IndexHash: un.hashUserID(),
+		IndexHash: un.HashUserID(),
 		RecordID:  un.RecordID,
 	}
-	var err = gsdk.SetIndexHash(cluster, &userIDIndex)
+	var err = gsdk.SetIndexHash(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (un *UserName) hashUserID() (hash [32]byte) {
+// HashUserID hash userNameStructureID + un.UserID
+func (un *UserName) HashUserID() (hash [32]byte) {
 	var buf = make([]byte, 24) // 8+16
-
-	buf[0] = byte(un.RecordStructureID)
-	buf[1] = byte(un.RecordStructureID >> 8)
-	buf[2] = byte(un.RecordStructureID >> 16)
-	buf[3] = byte(un.RecordStructureID >> 24)
-	buf[4] = byte(un.RecordStructureID >> 32)
-	buf[5] = byte(un.RecordStructureID >> 40)
-	buf[6] = byte(un.RecordStructureID >> 48)
-	buf[7] = byte(un.RecordStructureID >> 56)
-
+	syllab.SetUInt64(buf, 0, userNameStructureID)
 	copy(buf[8:], un.UserID[:])
-
 	return sha512.Sum512_256(buf)
 }
 
-func (un *UserName) hashUserName() (hash [32]byte) {
+/*
+	-- SECONDARY INDEXES --
+*/
+
+// IndexUserName index to retrieve all un.UserID owned by given Username later.
+// Don't call in update to an exiting record!
+func (un *UserName) IndexUserName() {
+	var indexRequest = gs.SetIndexHashReq{
+		Type:      gs.RequestTypeBroadcast,
+		IndexHash: un.HashUserName(),
+	}
+	copy(indexRequest.RecordID[:], un.UserID[:])
+	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	if err != nil {
+		// TODO::: we must retry more due to record wrote successfully!
+	}
+}
+
+// HashUserName hash userNameStructureID + un.Username
+func (un *UserName) HashUserName() (hash [32]byte) {
 	var buf = make([]byte, 8+len(un.Username))
-
-	buf[0] = byte(un.RecordStructureID)
-	buf[1] = byte(un.RecordStructureID >> 8)
-	buf[2] = byte(un.RecordStructureID >> 16)
-	buf[3] = byte(un.RecordStructureID >> 24)
-	buf[4] = byte(un.RecordStructureID >> 32)
-	buf[5] = byte(un.RecordStructureID >> 40)
-	buf[6] = byte(un.RecordStructureID >> 48)
-	buf[7] = byte(un.RecordStructureID >> 56)
-
+	syllab.SetUInt64(buf, 0, userNameStructureID)
 	copy(buf[8:], un.Username)
-
 	return sha512.Sum512_256(buf)
 }
+
+/*
+	-- Syllab Encoder & Decoder --
+*/
 
 func (un *UserName) syllabDecoder(buf []byte) (err error) {
-	if uint64(len(buf)) < userNameFixedSize {
-		err = syllab.ErrSyllabDecodingFailedSmallSlice
+	var add, ln uint32
+	var tempSlice []byte
+
+	if uint32(len(buf)) < un.syllabStackLen() {
+		err = syllab.ErrSyllabDecodeSmallSlice
 		return
 	}
 
-	copy(un.RecordID[:], buf[:])
-	un.RecordStructureID = uint64(buf[32]) | uint64(buf[33])<<8 | uint64(buf[34])<<16 | uint64(buf[35])<<24 | uint64(buf[36])<<32 | uint64(buf[37])<<40 | uint64(buf[38])<<48 | uint64(buf[39])<<56
-	un.RecordSize = uint64(buf[40]) | uint64(buf[41])<<8 | uint64(buf[42])<<16 | uint64(buf[43])<<24 | uint64(buf[44])<<32 | uint64(buf[45])<<40 | uint64(buf[46])<<48 | uint64(buf[47])<<56
-	un.WriteTime = int64(buf[48]) | int64(buf[49])<<8 | int64(buf[50])<<16 | int64(buf[51])<<24 | int64(buf[52])<<32 | int64(buf[53])<<40 | int64(buf[54])<<48 | int64(buf[55])<<56
+	copy(un.RecordID[:], buf[0:])
+	un.RecordStructureID = syllab.GetUInt64(buf, 32)
+	un.RecordSize = syllab.GetUInt64(buf, 40)
+	un.WriteTime = syllab.GetInt64(buf, 48)
 	copy(un.OwnerAppID[:], buf[56:])
 
 	copy(un.AppInstanceID[:], buf[72:])
 	copy(un.UserConnectionID[:], buf[88:])
 	copy(un.UserID[:], buf[104:])
-	var userNameAdd = uint32(buf[120]) | uint32(buf[121])<<8 | uint32(buf[122])<<16 | uint32(buf[123])<<24
-	var userNameLen = uint32(buf[124]) | uint32(buf[125])<<8 | uint32(buf[126])<<16 | uint32(buf[127])<<24
-	un.Status = userNameStatus(buf[128])
-
+	add = syllab.GetUInt32(buf, 120)
+	ln = syllab.GetUInt32(buf, 124)
 	// It must check len of every heap access but due to encode of data is safe proccess by us, skip it here!
-	buf = buf[userNameAdd:userNameLen]
-	un.Username = *(*string)(unsafe.Pointer(&buf))
-
+	tempSlice = buf[add : add+ln]
+	un.Username = *(*string)(unsafe.Pointer(&tempSlice))
+	un.Status = UserNameStatus(syllab.GetUInt8(buf, 128))
 	return
 }
 
 func (un *UserName) syllabEncoder() (buf []byte) {
 	buf = make([]byte, un.syllabLen())
+	var hsi uint32 = un.syllabStackLen() // Heap start index || Stack size!
+	var ln uint32                        // len of strings, slices, maps, ...
 
 	// copy(buf[0:], un.RecordID[:])
-	buf[32] = byte(un.RecordStructureID)
-	buf[33] = byte(un.RecordStructureID >> 8)
-	buf[34] = byte(un.RecordStructureID >> 16)
-	buf[35] = byte(un.RecordStructureID >> 24)
-	buf[36] = byte(un.RecordStructureID >> 32)
-	buf[37] = byte(un.RecordStructureID >> 40)
-	buf[38] = byte(un.RecordStructureID >> 48)
-	buf[39] = byte(un.RecordStructureID >> 56)
-	buf[40] = byte(un.RecordSize)
-	buf[41] = byte(un.RecordSize >> 8)
-	buf[42] = byte(un.RecordSize >> 16)
-	buf[43] = byte(un.RecordSize >> 24)
-	buf[44] = byte(un.RecordSize >> 32)
-	buf[45] = byte(un.RecordSize >> 40)
-	buf[46] = byte(un.RecordSize >> 48)
-	buf[47] = byte(un.RecordSize >> 56)
-	buf[48] = byte(un.WriteTime)
-	buf[49] = byte(un.WriteTime >> 8)
-	buf[50] = byte(un.WriteTime >> 16)
-	buf[51] = byte(un.WriteTime >> 24)
-	buf[52] = byte(un.WriteTime >> 32)
-	buf[53] = byte(un.WriteTime >> 40)
-	buf[54] = byte(un.WriteTime >> 48)
-	buf[55] = byte(un.WriteTime >> 56)
+	syllab.SetUInt64(buf, 32, un.RecordStructureID)
+	syllab.SetUInt64(buf, 40, un.RecordSize)
+	syllab.SetInt64(buf, 48, un.WriteTime)
 	copy(buf[56:], un.OwnerAppID[:])
 
 	copy(buf[72:], un.AppInstanceID[:])
 	copy(buf[88:], un.UserConnectionID[:])
 	copy(buf[104:], un.UserID[:])
-	buf[120] = byte(userNameFixedSize) // Heap start index
-	buf[121] = byte(userNameFixedSize >> 8)
-	buf[122] = byte(userNameFixedSize >> 16)
-	buf[123] = byte(userNameFixedSize >> 24)
-	var ln = len(un.Username)
-	buf[124] = byte(ln)
-	buf[125] = byte(ln >> 8)
-	buf[126] = byte(ln >> 16)
-	buf[127] = byte(ln >> 24)
-	copy(buf[userNameFixedSize:], un.Username)
-	buf[128] = byte(un.Status)
-
+	ln = uint32(len(un.Username))
+	syllab.SetUInt32(buf, 120, hsi)
+	syllab.SetUInt32(buf, 124, ln)
+	copy(buf[hsi:], un.Username)
+	syllab.SetUInt8(buf, 128, uint8(un.Status))
 	return
 }
 
-func (un *UserName) syllabLen() uint64 {
-	return userNameFixedSize + uint64(len(un.Username))
+func (un *UserName) syllabStackLen() (ln uint32) {
+	return 129 // fixed size data + variables data add&&len
+}
+
+func (un *UserName) syllabHeapLen() (ln uint32) {
+	ln += uint32(len(un.Username))
+	return
+}
+
+func (un *UserName) syllabLen() (ln uint64) {
+	return uint64(un.syllabStackLen() + un.syllabHeapLen())
 }

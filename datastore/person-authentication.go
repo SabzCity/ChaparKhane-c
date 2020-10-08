@@ -9,16 +9,35 @@ import (
 	"../libgo/ganjine"
 	gsdk "../libgo/ganjine-sdk"
 	gs "../libgo/ganjine-services"
+	lang "../libgo/language"
 	"../libgo/syllab"
 )
 
 const (
 	personAuthenticationStructureID uint64 = 2759743017265268907
-	personAuthenticationFixedSize   uint64 = 237 // 72 + 165 + (0 * 8) >> Common header + Unique data + vars add&&len
-	personAuthenticationState       uint8  = ganjine.DataStructureStatePreAlpha
 )
 
-// PersonAuthentication store real person authenticate data.
+var personAuthenticationStructure = ganjine.DataStructure{
+	ID:                2759743017265268907,
+	IssueDate:         1595888151,
+	ExpiryDate:        0,
+	ExpireInFavorOf:   "", // Other structure name
+	ExpireInFavorOfID: 0,  // Other StructureID! Handy ID or Hash of ExpireInFavorOf!
+	Status:            ganjine.DataStructureStatePreAlpha,
+	Structure:         PersonAuthentication{},
+
+	Name: map[lang.Language]string{
+		lang.EnglishLanguage: "PersonAuthentication",
+	},
+	Description: map[lang.Language]string{
+		lang.EnglishLanguage: "store real person authenticate data",
+	},
+	TAGS: []string{
+		"",
+	},
+}
+
+// PersonAuthentication ---Read locale description in userAppsConnectionStructure---
 type PersonAuthentication struct {
 	/* Common header data */
 	RecordID          [32]byte
@@ -30,9 +49,10 @@ type PersonAuthentication struct {
 	/* Unique data */
 	AppInstanceID    [16]byte // Store to remember which app instance set||chanaged this record!
 	UserConnectionID [16]byte // Store to remember which user connection set||chanaged this record!
-	PersonID         [16]byte // UUID of Person
-	ReferentPersonID [16]byte
-	Status           personAuthenticationStatus
+	PersonID         [16]byte `ganjine:"Immutable,Unique"` // UUID of Person
+	ReferentPersonID [16]byte `ganjine:"Immutable"`
+	Status           PersonAuthenticationStatus
+
 	// Person Authentication Factors https://en.wikipedia.org/wiki/Authentication#Factors_and_identity
 	PasswordHash  [32]byte
 	OTPPattern    [32]byte // https://tools.ietf.org/html/rfc6238
@@ -40,12 +60,13 @@ type PersonAuthentication struct {
 	SecurityKey   [32]byte
 }
 
-type personAuthenticationStatus uint8
+// PersonAuthenticationStatus indicate PersonAuthentication record status
+type PersonAuthenticationStatus uint8
 
 // PersonAuthentication status
 const (
 	// PersonAuthenticationInactive indicate person had been inactive and can't be use now!
-	PersonAuthenticationInactive personAuthenticationStatus = iota
+	PersonAuthenticationInactive PersonAuthenticationStatus = iota
 	// PersonAuthenticationBlocked indicate person had been blocked and can't be use now!
 	PersonAuthenticationBlocked
 	// PersonAuthenticationNotForceUse2Factor indicate authenticate person just with Password
@@ -95,7 +116,7 @@ func (pa *PersonAuthentication) GetByRecordID() (err error) {
 	}
 
 	if pa.RecordStructureID != personAuthenticationStructureID {
-		err = ganjine.ErrRecordMisMatchedStructureID
+		err = ganjine.ErrGanjineMisMatchedStructureID
 	}
 	return
 }
@@ -103,7 +124,7 @@ func (pa *PersonAuthentication) GetByRecordID() (err error) {
 // GetByPersonID method find and read last version of record by given PersonID!
 func (pa *PersonAuthentication) GetByPersonID() (err error) {
 	var indexReq = &gs.FindRecordsReq{
-		IndexHash: pa.hashPersonID(),
+		IndexHash: pa.HashPersonID(),
 		Offset:    18446744073709551615,
 		Limit:     0,
 	}
@@ -115,140 +136,116 @@ func (pa *PersonAuthentication) GetByPersonID() (err error) {
 
 	var ln = len(indexRes.RecordIDs)
 	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	for {
-		ln--
+	ln--
+	for ; ln > 0; ln-- {
 		pa.RecordID = indexRes.RecordIDs[ln]
 		err = pa.GetByRecordID()
-		if err != ganjine.ErrRecordMisMatchedStructureID {
+		if err != ganjine.ErrGanjineMisMatchedStructureID {
 			return
 		}
 	}
+	return ganjine.ErrGanjineRecordNotFound
 }
+
+/*
+	-- PRIMARY INDEXES --
+*/
 
 // IndexPersonID index pa.PersonID to retrieve record fast later.
 func (pa *PersonAuthentication) IndexPersonID() {
-	var personIDIndex = gs.SetIndexHashReq{
+	var indexRequest = gs.SetIndexHashReq{
 		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pa.hashPersonID(),
+		IndexHash: pa.HashPersonID(),
 		RecordID:  pa.RecordID,
 	}
-	var err = gsdk.SetIndexHash(cluster, &personIDIndex)
-	if err != nil {
-		// TODO::: we must retry more due to record wrote successfully!
-	}
-}
-
-// IndexRegisterTime index pa.WriteTime to retrieve all register person on specific time in hour rate.
-// Each year is 8760 hour (365*24) that indicate we have 8760 index record each year!
-func (pa *PersonAuthentication) IndexRegisterTime() {
-	var personIDIndex = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pa.hashWriteTimeHourly(),
-		RecordID:  pa.RecordID,
-	}
-	var err = gsdk.SetIndexHash(cluster, &personIDIndex)
-	if err != nil {
-		// TODO::: we must retry more due to record wrote successfully before this func!
-	}
-}
-
-// IndexReferentPersonID index pa.ReferentPersonID to retrieve record fast later.
-func (pa *PersonAuthentication) IndexReferentPersonID() {
-	var personIDIndex = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pa.hashReferentPersonID(),
-		RecordID:  pa.RecordID,
-	}
-	var err = gsdk.SetIndexHash(cluster, &personIDIndex)
+	var err = gsdk.SetIndexHash(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
 // HashPersonID hash personAuthenticationStructureID + pa.PersonID
-func (pa *PersonAuthentication) hashPersonID() (hash [32]byte) {
+func (pa *PersonAuthentication) HashPersonID() (hash [32]byte) {
 	var buf = make([]byte, 24) // 8+16
-
-	buf[0] = byte(pa.RecordStructureID)
-	buf[1] = byte(pa.RecordStructureID >> 8)
-	buf[2] = byte(pa.RecordStructureID >> 16)
-	buf[3] = byte(pa.RecordStructureID >> 24)
-	buf[4] = byte(pa.RecordStructureID >> 32)
-	buf[5] = byte(pa.RecordStructureID >> 40)
-	buf[6] = byte(pa.RecordStructureID >> 48)
-	buf[7] = byte(pa.RecordStructureID >> 56)
-
+	syllab.SetUInt64(buf, 0, personAuthenticationStructureID)
 	copy(buf[8:], pa.PersonID[:])
-
 	return sha512.Sum512_256(buf)
 }
 
-// hashWriteTimeHourly hash personAuthenticationStructureID + pa.WriteTime(round to hour)
-func (pa *PersonAuthentication) hashWriteTimeHourly() (hash [32]byte) {
+/*
+	-- SECONDARY INDEXES --
+*/
+
+// IndexRegisterTime index pa.WriteTime to retrieve all register person on specific time in hour rate.
+// Each year is 8760 hour (365*24) that indicate we have 8760 index record each year!
+func (pa *PersonAuthentication) IndexRegisterTime() {
+	var indexRequest = gs.SetIndexHashReq{
+		Type:      gs.RequestTypeBroadcast,
+		IndexHash: pa.HashWriteTimeHourly(),
+		RecordID:  pa.RecordID,
+	}
+	copy(indexRequest.RecordID[:], pa.PersonID[:])
+	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	if err != nil {
+		// TODO::: we must retry more due to record wrote successfully before this func!
+	}
+}
+
+// HashWriteTimeHourly hash personAuthenticationStructureID + pa.WriteTime(round to hour)
+func (pa *PersonAuthentication) HashWriteTimeHourly() (hash [32]byte) {
 	var buf = make([]byte, 16) // 8+8
-
-	buf[0] = byte(pa.RecordStructureID)
-	buf[1] = byte(pa.RecordStructureID >> 8)
-	buf[2] = byte(pa.RecordStructureID >> 16)
-	buf[3] = byte(pa.RecordStructureID >> 24)
-	buf[4] = byte(pa.RecordStructureID >> 32)
-	buf[5] = byte(pa.RecordStructureID >> 40)
-	buf[6] = byte(pa.RecordStructureID >> 48)
-	buf[7] = byte(pa.RecordStructureID >> 56)
-
-	var roundedTime = etime.RoundToHour(pa.WriteTime)
-	buf[8] = byte(roundedTime)
-	buf[9] = byte(roundedTime >> 8)
-	buf[10] = byte(roundedTime >> 16)
-	buf[11] = byte(roundedTime >> 24)
-	buf[12] = byte(roundedTime >> 32)
-	buf[13] = byte(roundedTime >> 40)
-	buf[14] = byte(roundedTime >> 48)
-	buf[15] = byte(roundedTime >> 56)
-
+	syllab.SetUInt64(buf, 0, personAuthenticationStructureID)
+	syllab.SetInt64(buf, 8, etime.RoundToHour(pa.WriteTime))
 	return sha512.Sum512_256(buf)
 }
 
-// hashReferentPersonID hash personAuthenticationStructureID + pa.ReferentPersonID
-func (pa *PersonAuthentication) hashReferentPersonID() (hash [32]byte) {
+// IndexReferentPersonID index pa.ReferentPersonID to retrieve record fast later.
+func (pa *PersonAuthentication) IndexReferentPersonID() {
+	var indexRequest = gs.SetIndexHashReq{
+		Type:      gs.RequestTypeBroadcast,
+		IndexHash: pa.HashReferentPersonID(),
+	}
+	copy(indexRequest.RecordID[:], pa.PersonID[:])
+	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	if err != nil {
+		// TODO::: we must retry more due to record wrote successfully!
+	}
+}
+
+// HashReferentPersonID hash personAuthenticationStructureID + pa.ReferentPersonID
+func (pa *PersonAuthentication) HashReferentPersonID() (hash [32]byte) {
 	var buf = make([]byte, 24) // 8+16
-
-	buf[0] = byte(pa.RecordStructureID)
-	buf[1] = byte(pa.RecordStructureID >> 8)
-	buf[2] = byte(pa.RecordStructureID >> 16)
-	buf[3] = byte(pa.RecordStructureID >> 24)
-	buf[4] = byte(pa.RecordStructureID >> 32)
-	buf[5] = byte(pa.RecordStructureID >> 40)
-	buf[6] = byte(pa.RecordStructureID >> 48)
-	buf[7] = byte(pa.RecordStructureID >> 56)
-
+	syllab.SetUInt64(buf, 0, personAuthenticationStructureID)
 	copy(buf[8:], pa.ReferentPersonID[:])
-
 	return sha512.Sum512_256(buf)
 }
+
+/*
+	-- Syllab Encoder & Decoder --
+*/
 
 func (pa *PersonAuthentication) syllabDecoder(buf []byte) (err error) {
-	if uint64(len(buf)) < personAuthenticationFixedSize {
-		err = syllab.ErrSyllabDecodingFailedSmallSlice
+	if uint32(len(buf)) < pa.syllabStackLen() {
+		err = syllab.ErrSyllabDecodeSmallSlice
 		return
 	}
 
-	copy(pa.RecordID[:], buf[:])
-	pa.RecordStructureID = uint64(buf[32]) | uint64(buf[33])<<8 | uint64(buf[34])<<16 | uint64(buf[35])<<24 | uint64(buf[36])<<32 | uint64(buf[37])<<40 | uint64(buf[38])<<48 | uint64(buf[39])<<56
-	pa.RecordSize = uint64(buf[40]) | uint64(buf[41])<<8 | uint64(buf[42])<<16 | uint64(buf[43])<<24 | uint64(buf[44])<<32 | uint64(buf[45])<<40 | uint64(buf[46])<<48 | uint64(buf[47])<<56
-	pa.WriteTime = int64(buf[48]) | int64(buf[49])<<8 | int64(buf[50])<<16 | int64(buf[51])<<24 | int64(buf[52])<<32 | int64(buf[53])<<40 | int64(buf[54])<<48 | int64(buf[55])<<56
+	copy(pa.RecordID[:], buf[0:])
+	pa.RecordStructureID = syllab.GetUInt64(buf, 32)
+	pa.RecordSize = syllab.GetUInt64(buf, 40)
+	pa.WriteTime = syllab.GetInt64(buf, 48)
 	copy(pa.OwnerAppID[:], buf[56:])
 
 	copy(pa.AppInstanceID[:], buf[72:])
 	copy(pa.UserConnectionID[:], buf[88:])
 	copy(pa.PersonID[:], buf[104:])
 	copy(pa.ReferentPersonID[:], buf[120:])
-	pa.Status = personAuthenticationStatus(buf[136])
+	pa.Status = PersonAuthenticationStatus(syllab.GetUInt8(buf, 136))
+
 	copy(pa.PasswordHash[:], buf[137:])
 	copy(pa.OTPPattern[:], buf[169:])
-	pa.OTPAdditional = int32(buf[201]) | int32(buf[202])<<8 | int32(buf[203])<<16 | int32(buf[204])<<24
+	pa.OTPAdditional = syllab.GetInt32(buf, 201)
 	copy(pa.SecurityKey[:], buf[205:])
-
 	return
 }
 
@@ -256,48 +253,32 @@ func (pa *PersonAuthentication) syllabEncoder() (buf []byte) {
 	buf = make([]byte, pa.syllabLen())
 
 	// copy(buf[0:], pa.RecordID[:])
-	buf[32] = byte(pa.RecordStructureID)
-	buf[33] = byte(pa.RecordStructureID >> 8)
-	buf[34] = byte(pa.RecordStructureID >> 16)
-	buf[35] = byte(pa.RecordStructureID >> 24)
-	buf[36] = byte(pa.RecordStructureID >> 32)
-	buf[37] = byte(pa.RecordStructureID >> 40)
-	buf[38] = byte(pa.RecordStructureID >> 48)
-	buf[39] = byte(pa.RecordStructureID >> 56)
-	buf[40] = byte(pa.RecordSize)
-	buf[41] = byte(pa.RecordSize >> 8)
-	buf[42] = byte(pa.RecordSize >> 16)
-	buf[43] = byte(pa.RecordSize >> 24)
-	buf[44] = byte(pa.RecordSize >> 32)
-	buf[45] = byte(pa.RecordSize >> 40)
-	buf[46] = byte(pa.RecordSize >> 48)
-	buf[47] = byte(pa.RecordSize >> 56)
-	buf[48] = byte(pa.WriteTime)
-	buf[49] = byte(pa.WriteTime >> 8)
-	buf[50] = byte(pa.WriteTime >> 16)
-	buf[51] = byte(pa.WriteTime >> 24)
-	buf[52] = byte(pa.WriteTime >> 32)
-	buf[53] = byte(pa.WriteTime >> 40)
-	buf[54] = byte(pa.WriteTime >> 48)
-	buf[55] = byte(pa.WriteTime >> 56)
+	syllab.SetUInt64(buf, 32, pa.RecordStructureID)
+	syllab.SetUInt64(buf, 40, pa.RecordSize)
+	syllab.SetInt64(buf, 48, pa.WriteTime)
 	copy(buf[56:], pa.OwnerAppID[:])
 
 	copy(buf[72:], pa.AppInstanceID[:])
 	copy(buf[88:], pa.UserConnectionID[:])
 	copy(buf[104:], pa.PersonID[:])
 	copy(buf[120:], pa.ReferentPersonID[:])
-	buf[136] = byte(pa.Status)
+	syllab.SetUInt8(buf, 136, uint8(pa.Status))
+
 	copy(buf[137:], pa.PasswordHash[:])
 	copy(buf[169:], pa.OTPPattern[:])
-	buf[201] = byte(pa.OTPAdditional)
-	buf[202] = byte(pa.OTPAdditional >> 8)
-	buf[203] = byte(pa.OTPAdditional >> 16)
-	buf[204] = byte(pa.OTPAdditional >> 24)
+	syllab.SetInt32(buf, 201, pa.OTPAdditional)
 	copy(buf[205:], pa.SecurityKey[:])
-
 	return
 }
 
-func (pa *PersonAuthentication) syllabLen() uint64 {
-	return personAuthenticationFixedSize
+func (pa *PersonAuthentication) syllabStackLen() (ln uint32) {
+	return 237 // fixed size data + variables data add&&len
+}
+
+func (pa *PersonAuthentication) syllabHeapLen() (ln uint32) {
+	return
+}
+
+func (pa *PersonAuthentication) syllabLen() (ln uint64) {
+	return uint64(pa.syllabStackLen() + pa.syllabHeapLen())
 }

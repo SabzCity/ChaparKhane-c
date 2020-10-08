@@ -9,16 +9,35 @@ import (
 	"../libgo/ganjine"
 	gsdk "../libgo/ganjine-sdk"
 	gs "../libgo/ganjine-services"
+	lang "../libgo/language"
 	"../libgo/syllab"
 )
 
 const (
 	personNumberStructureID uint64 = 1212190932488392076
-	personNumberFixedSize   uint64 = 129 // 72 + 57 + (0 * 8) >> Common header + Unique data + vars add&&len
-	personNumberState       uint8  = ganjine.DataStructureStatePreAlpha
 )
 
-// PersonNumber store user number that act for some process like exiting phone, mobile, ...
+var personNumberStructure = ganjine.DataStructure{
+	ID:                1212190932488392076,
+	IssueDate:         1599048951,
+	ExpiryDate:        0,
+	ExpireInFavorOf:   "", // Other structure name
+	ExpireInFavorOfID: 0,  // Other StructureID! Handy ID or Hash of ExpireInFavorOf!
+	Status:            ganjine.DataStructureStatePreAlpha,
+	Structure:         PersonNumber{},
+
+	Name: map[lang.Language]string{
+		lang.EnglishLanguage: "PersonNumber",
+	},
+	Description: map[lang.Language]string{
+		lang.EnglishLanguage: "store user number that act for some process like exiting phone, mobile, ...",
+	},
+	TAGS: []string{
+		"",
+	},
+}
+
+// PersonNumber ---Read locale description in personNumberStructure---
 type PersonNumber struct {
 	/* Common header data */
 	RecordID          [32]byte
@@ -30,16 +49,17 @@ type PersonNumber struct {
 	/* Unique data */
 	AppInstanceID    [16]byte // Store to remember which app instance set||chanaged this record!
 	UserConnectionID [16]byte // Store to remember which user connection set||chanaged this record!
-	PersonID         [16]byte
-	Number           uint64 // must start with country code e.g. (00)98-912-345-6789
-	Status           personNumberStatus
+	PersonID         [16]byte `ganjine:"Immutable,Unique"`
+	Number           uint64   `ganjine:"Unique"` // must start with country code e.g. (00)98-912-345-6789
+	Status           PersonNumberStatus
 }
 
-type personNumberStatus uint8
+// PersonNumberStatus indicate PersonNumber record status
+type PersonNumberStatus uint8
 
 // PersonNumber status
 const (
-	PersonNumberRegister personNumberStatus = iota
+	PersonNumberRegister PersonNumberStatus = iota
 	PersonNumberRemove
 	PersonNumberBlockByJustice
 )
@@ -83,7 +103,7 @@ func (pn *PersonNumber) GetByRecordID() (err error) {
 	}
 
 	if pn.RecordStructureID != personNumberStructureID {
-		err = ganjine.ErrRecordMisMatchedStructureID
+		err = ganjine.ErrGanjineMisMatchedStructureID
 	}
 	return
 }
@@ -91,7 +111,7 @@ func (pn *PersonNumber) GetByRecordID() (err error) {
 // GetByPersonID method find and read last version of record by given PersonID
 func (pn *PersonNumber) GetByPersonID() (err error) {
 	var indexReq = &gs.FindRecordsReq{
-		IndexHash: pn.hashPersonID(),
+		IndexHash: pn.HashPersonID(),
 		Offset:    18446744073709551615,
 		Limit:     0,
 	}
@@ -103,20 +123,21 @@ func (pn *PersonNumber) GetByPersonID() (err error) {
 
 	var ln = len(indexRes.RecordIDs)
 	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	for {
-		ln--
+	ln--
+	for ; ln > 0; ln-- {
 		pn.RecordID = indexRes.RecordIDs[ln]
 		err = pn.GetByRecordID()
-		if err != ganjine.ErrRecordMisMatchedStructureID {
+		if err != ganjine.ErrGanjineMisMatchedStructureID {
 			return
 		}
 	}
+	return ganjine.ErrGanjineRecordNotFound
 }
 
 // GetByNumber method find and read last version of record by given Number
 func (pn *PersonNumber) GetByNumber() (err error) {
 	var indexReq = &gs.FindRecordsReq{
-		IndexHash: pn.hashNumber(),
+		IndexHash: pn.HashNumber(),
 		Offset:    18446744073709551615,
 		Limit:     0,
 	}
@@ -128,101 +149,88 @@ func (pn *PersonNumber) GetByNumber() (err error) {
 
 	var ln = len(indexRes.RecordIDs)
 	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	for {
-		ln--
+	ln--
+	for ; ln > 0; ln-- {
 		pn.RecordID = indexRes.RecordIDs[ln]
 		err = pn.GetByRecordID()
-		if err != ganjine.ErrRecordMisMatchedStructureID {
+		if err != ganjine.ErrGanjineMisMatchedStructureID {
 			return
 		}
 	}
+	return ganjine.ErrGanjineRecordNotFound
 }
+
+/*
+	-- PRIMARY INDEXES --
+*/
 
 // IndexPersonID index pn.PersonID to retrieve record fast later.
 func (pn *PersonNumber) IndexPersonID() {
-	var personIDIndex = gs.SetIndexHashReq{
+	var indexRequest = gs.SetIndexHashReq{
 		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pn.hashPersonID(),
+		IndexHash: pn.HashPersonID(),
 		RecordID:  pn.RecordID,
 	}
-	var err = gsdk.SetIndexHash(cluster, &personIDIndex)
+	var err = gsdk.SetIndexHash(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
+
+// HashPersonID hash personNumberStructureID + pn.PersonID
+func (pn *PersonNumber) HashPersonID() (hash [32]byte) {
+	var buf = make([]byte, 24) // 8+16
+	syllab.SetUInt64(buf, 0, personNumberStructureID)
+	copy(buf[8:], pn.PersonID[:])
+	return sha512.Sum512_256(buf)
+}
+
+/*
+	-- SECONDARY INDEXES --
+*/
 
 // IndexNumber index pn.Number to retrieve record fast later.
 func (pn *PersonNumber) IndexNumber() {
-	var numberIndex = gs.SetIndexHashReq{
+	var indexRequest = gs.SetIndexHashReq{
 		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pn.hashNumber(),
-		RecordID:  pn.RecordID,
+		IndexHash: pn.HashNumber(),
 	}
-	var err = gsdk.SetIndexHash(cluster, &numberIndex)
+	copy(indexRequest.RecordID[:], pn.PersonID[:])
+	var err = gsdk.SetIndexHash(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (pn *PersonNumber) hashPersonID() (hash [32]byte) {
-	var buf = make([]byte, 24) // 8+16
-
-	buf[0] = byte(pn.RecordStructureID)
-	buf[1] = byte(pn.RecordStructureID >> 8)
-	buf[2] = byte(pn.RecordStructureID >> 16)
-	buf[3] = byte(pn.RecordStructureID >> 24)
-	buf[4] = byte(pn.RecordStructureID >> 32)
-	buf[5] = byte(pn.RecordStructureID >> 40)
-	buf[6] = byte(pn.RecordStructureID >> 48)
-	buf[7] = byte(pn.RecordStructureID >> 56)
-
-	copy(buf[8:], pn.PersonID[:])
-
-	return sha512.Sum512_256(buf)
-}
-
-func (pn *PersonNumber) hashNumber() (hash [32]byte) {
+// HashNumber hash personNumberStructureID + pn.Number
+func (pn *PersonNumber) HashNumber() (hash [32]byte) {
 	var buf = make([]byte, 16) // 8+8
-
-	buf[0] = byte(pn.RecordStructureID)
-	buf[1] = byte(pn.RecordStructureID >> 8)
-	buf[2] = byte(pn.RecordStructureID >> 16)
-	buf[3] = byte(pn.RecordStructureID >> 24)
-	buf[4] = byte(pn.RecordStructureID >> 32)
-	buf[5] = byte(pn.RecordStructureID >> 40)
-	buf[6] = byte(pn.RecordStructureID >> 48)
-	buf[7] = byte(pn.RecordStructureID >> 56)
-
-	buf[8] = byte(pn.Number)
-	buf[9] = byte(pn.Number >> 8)
-	buf[10] = byte(pn.Number >> 16)
-	buf[11] = byte(pn.Number >> 24)
-	buf[12] = byte(pn.Number >> 32)
-	buf[13] = byte(pn.Number >> 40)
-	buf[14] = byte(pn.Number >> 48)
-	buf[15] = byte(pn.Number >> 56)
-
+	syllab.SetUInt64(buf, 0, personNumberStructureID)
+	syllab.SetUInt64(buf, 8, pn.Number)
 	return sha512.Sum512_256(buf)
 }
+
+/*
+	-- Syllab Encoder & Decoder --
+*/
 
 func (pn *PersonNumber) syllabDecoder(buf []byte) (err error) {
-	if uint64(len(buf)) < personNumberFixedSize {
-		err = syllab.ErrSyllabDecodingFailedSmallSlice
+	if uint32(len(buf)) < pn.syllabStackLen() {
+		err = syllab.ErrSyllabDecodeSmallSlice
 		return
 	}
 
-	copy(pn.RecordID[:], buf[:])
-	pn.RecordStructureID = uint64(buf[32]) | uint64(buf[33])<<8 | uint64(buf[34])<<16 | uint64(buf[35])<<24 | uint64(buf[36])<<32 | uint64(buf[37])<<40 | uint64(buf[38])<<48 | uint64(buf[39])<<56
-	pn.RecordSize = uint64(buf[40]) | uint64(buf[41])<<8 | uint64(buf[42])<<16 | uint64(buf[43])<<24 | uint64(buf[44])<<32 | uint64(buf[45])<<40 | uint64(buf[46])<<48 | uint64(buf[47])<<56
-	pn.WriteTime = int64(buf[48]) | int64(buf[49])<<8 | int64(buf[50])<<16 | int64(buf[51])<<24 | int64(buf[52])<<32 | int64(buf[53])<<40 | int64(buf[54])<<48 | int64(buf[55])<<56
+	copy(pn.RecordID[:], buf[0:])
+	pn.RecordStructureID = syllab.GetUInt64(buf, 32)
+	pn.RecordSize = syllab.GetUInt64(buf, 40)
+	pn.WriteTime = syllab.GetInt64(buf, 48)
 	copy(pn.OwnerAppID[:], buf[56:])
 
 	copy(pn.AppInstanceID[:], buf[72:])
 	copy(pn.UserConnectionID[:], buf[88:])
 	copy(pn.PersonID[:], buf[104:])
-	pn.Number = uint64(buf[120]) | uint64(buf[121])<<8 | uint64(buf[122])<<16 | uint64(buf[123])<<24 | uint64(buf[124])<<32 | uint64(buf[125])<<40 | uint64(buf[126])<<48 | uint64(buf[127])<<56
-	pn.Status = personNumberStatus(buf[128])
-
+	pn.Number = syllab.GetUInt64(buf, 120)
+	pn.Status = PersonNumberStatus(syllab.GetUInt8(buf, 128))
 	return
 }
 
@@ -230,48 +238,27 @@ func (pn *PersonNumber) syllabEncoder() (buf []byte) {
 	buf = make([]byte, pn.syllabLen())
 
 	// copy(buf[0:], pn.RecordID[:])
-	buf[32] = byte(pn.RecordStructureID)
-	buf[33] = byte(pn.RecordStructureID >> 8)
-	buf[34] = byte(pn.RecordStructureID >> 16)
-	buf[35] = byte(pn.RecordStructureID >> 24)
-	buf[36] = byte(pn.RecordStructureID >> 32)
-	buf[37] = byte(pn.RecordStructureID >> 40)
-	buf[38] = byte(pn.RecordStructureID >> 48)
-	buf[39] = byte(pn.RecordStructureID >> 56)
-	buf[40] = byte(pn.RecordSize)
-	buf[41] = byte(pn.RecordSize >> 8)
-	buf[42] = byte(pn.RecordSize >> 16)
-	buf[43] = byte(pn.RecordSize >> 24)
-	buf[44] = byte(pn.RecordSize >> 32)
-	buf[45] = byte(pn.RecordSize >> 40)
-	buf[46] = byte(pn.RecordSize >> 48)
-	buf[47] = byte(pn.RecordSize >> 56)
-	buf[48] = byte(pn.WriteTime)
-	buf[49] = byte(pn.WriteTime >> 8)
-	buf[50] = byte(pn.WriteTime >> 16)
-	buf[51] = byte(pn.WriteTime >> 24)
-	buf[52] = byte(pn.WriteTime >> 32)
-	buf[53] = byte(pn.WriteTime >> 40)
-	buf[54] = byte(pn.WriteTime >> 48)
-	buf[55] = byte(pn.WriteTime >> 56)
+	syllab.SetUInt64(buf, 32, pn.RecordStructureID)
+	syllab.SetUInt64(buf, 40, pn.RecordSize)
+	syllab.SetInt64(buf, 48, pn.WriteTime)
 	copy(buf[56:], pn.OwnerAppID[:])
 
 	copy(buf[72:], pn.AppInstanceID[:])
 	copy(buf[88:], pn.UserConnectionID[:])
 	copy(buf[104:], pn.PersonID[:])
-	buf[120] = byte(pn.Number)
-	buf[121] = byte(pn.Number >> 8)
-	buf[122] = byte(pn.Number >> 16)
-	buf[123] = byte(pn.Number >> 24)
-	buf[124] = byte(pn.Number >> 32)
-	buf[125] = byte(pn.Number >> 40)
-	buf[126] = byte(pn.Number >> 48)
-	buf[127] = byte(pn.Number >> 56)
-	buf[128] = byte(pn.Status)
-
+	syllab.SetUInt64(buf, 120, pn.Number)
+	syllab.SetUInt8(buf, 128, uint8(pn.Status))
 	return
 }
 
-func (pn *PersonNumber) syllabLen() uint64 {
-	return personNumberFixedSize
+func (pn *PersonNumber) syllabStackLen() (ln uint32) {
+	return 129 // fixed size data + variables data add&&len
+}
+
+func (pn *PersonNumber) syllabHeapLen() (ln uint32) {
+	return
+}
+
+func (pn *PersonNumber) syllabLen() (ln uint64) {
+	return uint64(pn.syllabStackLen() + pn.syllabHeapLen())
 }
