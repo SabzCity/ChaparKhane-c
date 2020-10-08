@@ -37,7 +37,7 @@ printf "${GREEN}Select one option
         ${BLUE}4)Enable systemd services
         ${BLUE}5)Build
         ${BLUE}6)Start
-        ${BLUE}7)Start dev version
+        ${BLUE}7)
         ${BLUE}8)Get or renew LetsEncrypt 
         ${BLUE}9)
         ${BLUE}10) ${NC}\n"
@@ -76,8 +76,6 @@ elif [[ $option == 4 ]]; then
     # Install||Update systemd .service files
     printf "\n${GREEN}Update sabz.city.service Systemd ${NC}\n"
     systemctl enable $repo_Dir/sabz.city.service
-    printf "\n${GREEN}Update sabz.city-dev.service Systemd ${NC}\n"
-    systemctl enable $repo_Dir/sabz.city-dev.service
     # update systemd daemon
     printf "\n${GREEN}Update systemd daemon ${NC}\n"
     systemctl daemon-reload
@@ -87,7 +85,6 @@ elif [[ $option == 5 ]]; then
     # Get repo dependecies & Build app
     printf "\n${GREEN}build sabz.city main and development phase app ${NC}\n"
     go build
-    go build -o gui-dev $repo_Dir/gui
 
 # Start||Restart main version app
 elif [[ $option == 6 ]]; then
@@ -97,8 +94,8 @@ elif [[ $option == 6 ]]; then
 
 # Start||Restart dev version app
 elif [[ $option == 7 ]]; then
-    printf "\n${GREEN}Start||Restart app ${NC}\n"
-    service sabz.city-dev restart
+    printf "\n${GREEN}--- ${NC}\n"
+
 
 # Get||Renew letsencrypt certificate
 elif [[ $option == 8 ]]; then
@@ -109,9 +106,11 @@ elif [[ $option == 8 ]]; then
 
 #
 elif [[ $option == 9 ]]; then
+    printf "\n${GREEN}--- ${NC}\n"
 
 #
 elif [[ $option == 10 ]]; then
+    printf "\n${GREEN}--- ${NC}\n"
 
 else
     printf "${YELLOW}Invalid choose, try again from beginning ${NC}\n" exec bash "$0"

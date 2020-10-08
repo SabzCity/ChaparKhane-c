@@ -7,6 +7,16 @@ It is a platform to test some idea to create a society without physical or human
 - Don't exit program for any reason. just let back error to upper layers.
 - Don't code in some way that need to exit program if some thing miss or unavailable! Instead error with 500 to user requests.
 
+### Math Rules
+- **Generally Accepted Accounting Principles** suggest 4 decimals precision!
+```Math
+PerCent		    >> Per Hundred			>> %
+PerMille	    >> Per Thousand			>> ‰
+PerMyriad	    >> Per Ten Thousand		>> ‱
+PerCentMille    >> Per Hundred Thousand	>> pcm
+PerMillion	    >> Per Million			>> ppm
+```
+
 ## APIs
 
 ### Record Owner
@@ -65,9 +75,10 @@ e.g.
 ` www.sabz.city/product/123456789?name=product_name&hl=en `
 
 ### Serve
-- Build gui in dev phase by ```go build -o gui-dev ./gui``` in a terminal
-- Run build app by ```./gui-dev``` in a terminal
-- Reload gui files by hit enter in the terminal anytime!
+- Check productionInit() and devInit() comment state in main.go file for your purpose!
+- Build by ```go build``` in a terminal
+- Run build app by ```./sabz.city``` in a terminal
+- Reload gui files by hit enter in the terminal in development version or send SIGUSR1(10) OS signal in both version anytime!
 
 ## Editors
 ### VSC
