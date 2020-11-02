@@ -3,9 +3,12 @@
 package main
 
 import (
+	"time"
+
 	"./datastore"
 	"./libgo/achaemenid"
 	as "./libgo/achaemenid-services"
+	er "./libgo/error"
 	"./libgo/ganjine"
 	gs "./libgo/ganjine-services"
 	lang "./libgo/language"
@@ -20,16 +23,13 @@ var (
 )
 
 func init() {
-	var err error
+	var err *er.Error
 
 	server.Manifest = achaemenid.Manifest{
-		SocietyID:           0,
-		AppID:               [16]byte{},
-		DomainID:            [16]byte{},
-		DomainName:          "sabz.city",
-		Email:               "ict@sabz.city",
-		Icon:                "",
-		AuthorizedAppDomain: [][16]byte{},
+		SocietyID:  1,
+		DomainName: "sabz.city",
+		Email:      "ict@sabz.city",
+		Icon:       "",
 
 		Organization: map[lang.Language]string{
 			lang.EnglishLanguage: "Persia Society",
@@ -44,12 +44,12 @@ func init() {
 			lang.PersianLanguage: "پلتفرم شهرسبز",
 		},
 		TermsOfService: map[lang.Language]string{
-			lang.EnglishLanguage: "https://www.sabz.city/terms?hl=en",
-			lang.PersianLanguage: "https://www.sabz.city/terms?hl=fa",
+			lang.EnglishLanguage: "https://sabz.city/terms?hl=en",
+			lang.PersianLanguage: "https://sabz.city/terms?hl=fa",
 		},
 		Licence: map[lang.Language]string{
-			lang.EnglishLanguage: "https://www.sabz.city/licence?hl=en",
-			lang.PersianLanguage: "https://www.sabz.city/licence?hl=fa",
+			lang.EnglishLanguage: "https://sabz.city/licence?hl=en",
+			lang.PersianLanguage: "https://sabz.city/licence?hl=fa",
 		},
 		TAGS: []string{
 			"Society", "Innovative", "Government", "Life", "Life Style",
@@ -57,7 +57,13 @@ func init() {
 		},
 
 		RequestedPermission: []uint32{},
+
 		TechnicalInfo: achaemenid.TechnicalInfo{
+			ShutdownDelay: 2 * time.Second, // 2 * time.Minute,
+
+			MaxOpenConnection:     5000000,
+			ConnectionIdleTimeout: 24 * time.Hour,
+
 			GuestMaxConnections: 2000000,
 
 			CPUCores: 1,                        // one core
@@ -70,7 +76,7 @@ func init() {
 			DistributeOutOfSociety: false,
 			DataCentersClass:       5,
 			MaxNodeNumber:          30,
-			NodeFailureTimeOut:     60,
+			NodeFailureTimeOut:     6 * time.Hour,
 		},
 	}
 
@@ -85,9 +91,17 @@ func init() {
 	// Register platform defined custom service in ./services/ folder
 	ps.Init(&server)
 
-	// TODO::: Can automate comment|de-comment of two below function by OS flags but ...!!
-	// productionInit()
-	devInit()
+	if log.DevMode {
+		devInit()
+	} else {
+		productionInit()
+	}
+
+	// Connect to other nodes or become first node!
+	err = server.Nodes.Init(&server)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	cluster.Manifest = ganjine.Manifest{
 		DataCentersClass: 0,
@@ -95,6 +109,8 @@ func init() {
 
 		TransactionTimeOut: 500,
 		NodeFailureTimeOut: 60,
+
+		CachePercent: 20,
 	}
 
 	// Ganjine initialize
@@ -106,14 +122,15 @@ func init() {
 	gs.Init(&server, &cluster)
 	// Initialize datastore
 	datastore.Init(&server, &cluster)
+
+	// Register some other services for Achaemenid
+	server.Connections.GetConnByID = getConnectionsByID
+	server.Connections.GetConnByUserIDThingID = getConnectionsByUserIDThingID
+	server.Connections.SaveConn = saveConnection
 }
 
 func main() {
-	var err error
-	err = server.Start()
-	if err != nil {
-		log.Fatal(err)
-	}
+	server.Start()
 }
 
 func productionInit() {
@@ -151,16 +168,6 @@ func productionInit() {
 	// if err != nil {
 	// 	log.Fatal(err)
 	// }
-
-	// Register some other services for Achaemenid
-	server.Connections.GetConnByID = getConnectionsByID
-	server.Connections.GetConnByUserID = getConnectionsByUserID
-
-	// Connect to other nodes or become first node!
-	err = server.Nodes.Init(&server)
-	if err != nil {
-		log.Fatal(err)
-	}
 }
 
 func devInit() {
@@ -170,12 +177,15 @@ func devInit() {
 	server.StreamProtocols.SetProtocolHandler(8080, achaemenid.HTTPIncomeRequestHandler)
 	err = achaemenid.MakeTCPNetwork(&server, 8080)
 	if err != nil {
+		log.Warn(err)
+	}
+
+	log.Info("try to register TCP/TLS on port 443 to listen for HTTPs protocol")
+	server.StreamProtocols.SetProtocolHandler(443, achaemenid.HTTPIncomeRequestHandler)
+	err = achaemenid.MakeTCPTLSNetwork(&server, 443)
+	if err != nil {
 		log.Fatal(err)
 	}
 
-	go server.Assets.ReLoadFromStorage()
-
-	// Register some other services for Achaemenid
-	server.Connections.GetConnByID = func(connID [16]byte) (conn *achaemenid.Connection) { return }
-	server.Connections.GetConnByUserID = func(userID, appID, thingID [16]byte) (conn *achaemenid.Connection) { return }
+	go server.Assets.ReLoadFromStorageByCLI()
 }
