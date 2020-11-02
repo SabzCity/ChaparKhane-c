@@ -4,101 +4,103 @@ package services
 
 import (
 	"crypto/rand"
+	"crypto/sha512"
 
 	"../datastore"
 	"../libgo/achaemenid"
+	"../libgo/authorization"
+	er "../libgo/error"
 	"../libgo/http"
 	"../libgo/json"
+	lang "../libgo/language"
+	"../libgo/otp"
+	"../libgo/srpc"
+	"../libgo/syllab"
 	"../libgo/uuid"
 )
 
 var registerNewPersonService = achaemenid.Service{
 	ID:                956555232,
 	URI:               "", // API services can set like "/apis?956555232" but it is not efficient, find services by ID.
-	Name:              "RegisterNewPerson",
+	CRUD:              authorization.CRUDCreate,
 	IssueDate:         1592316187,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "",
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
-	Description: []string{
-		"register a new user in SabzCity platform.",
+
+	Name: map[lang.Language]string{
+		lang.EnglishLanguage: "RegisterNewPerson",
 	},
-	TAGS:        []string{"Authentication"},
+	Description: map[lang.Language]string{
+		lang.EnglishLanguage: "register a new user in SabzCity platform.",
+	},
+	TAGS: []string{
+		"Authentication",
+	},
+
 	SRPCHandler: RegisterNewPersonSRPC,
 	HTTPHandler: RegisterNewPersonHTTP,
 }
 
 // RegisterNewPersonSRPC is sRPC handler of RegisterNewPerson service.
-func RegisterNewPersonSRPC(s *achaemenid.Server, st *achaemenid.Stream) {
+func RegisterNewPersonSRPC(st *achaemenid.Stream) {
 	var req = &registerNewPersonReq{}
-	st.ReqRes.Err = req.syllabDecoder(st.Payload[4:])
-	if st.ReqRes.Err != nil {
+	st.Err = req.syllabDecoder(srpc.GetPayload(st.IncomePayload))
+	if st.Err != nil {
 		return
 	}
 
 	var res *registerNewPersonRes
-	res, st.ReqRes.Err = registerNewPerson(st, req)
+	res, st.Err = registerNewPerson(st, req)
 	// Check if any error occur in bussiness logic
-	if st.ReqRes.Err != nil {
+	if st.Err != nil {
 		return
 	}
 
-	st.ReqRes.Payload = res.syllabEncoder(4)
+	st.OutcomePayload = make([]byte, res.syllabLen()+4)
+	res.syllabEncoder(srpc.GetPayload(st.OutcomePayload))
 }
 
 // RegisterNewPersonHTTP is HTTP handler of RegisterNewPerson service.
-func RegisterNewPersonHTTP(s *achaemenid.Server, st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
+func RegisterNewPersonHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
 	var req = &registerNewPersonReq{}
-	st.ReqRes.Err = req.jsonDecoder(httpReq.Body)
-	if st.ReqRes.Err != nil {
+	st.Err = req.jsonDecoder(httpReq.Body)
+	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
 	var res *registerNewPersonRes
-	res, st.ReqRes.Err = registerNewPerson(st, req)
+	res, st.Err = registerNewPerson(st, req)
 	// Check if any error occur in bussiness logic
-	if st.ReqRes.Err != nil {
+	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
-	httpRes.Body, st.ReqRes.Err = res.jsonEncoder()
-	// st.ReqRes.Err make occur on just memory full!
-
 	httpRes.SetStatus(http.StatusOKCode, http.StatusOKPhrase)
-	httpRes.Header.SetValue(http.HeaderKeyContentType, "application/json")
+	httpRes.Header.Set(http.HeaderKeyContentType, "application/json")
+	httpRes.Body = res.jsonEncoder()
 }
 
 type registerNewPersonReq struct {
-	PhoneNumber uint64 `valid:"PhoneNumber"`
+	PhoneNumber uint64
 	PhoneOTP    uint64
-	CaptchaID   [16]byte
+	CaptchaID   [16]byte `json:",string"`
 
-	PasswordHash  [32]byte
+	PasswordHash  [32]byte `json:",string"`
 	OTPAdditional int32
 }
 
 type registerNewPersonRes struct {
-	PersonID    [16]byte // UUID of registered user
-	OTPPattern  [32]byte
-	SecurityKey [32]byte
+	PersonID    [32]byte `json:",string"` // UUID of registered user
+	OTPPattern  [32]byte `json:",string"`
+	SecurityKey [32]byte `json:",string"`
 }
 
-func registerNewPerson(st *achaemenid.Stream, req *registerNewPersonReq) (res *registerNewPersonRes, err error) {
-	// TODO::: Authenticate request first by service policy.
-
-	err = st.Authorize()
-	if err != nil {
-		return
-	}
-
-	// Validate data here due to service use internally by other services!
-	err = req.validator()
-	if err != nil {
-		return
-	}
+func registerNewPerson(st *achaemenid.Stream, req *registerNewPersonReq) (res *registerNewPersonRes, err *er.Error) {
+	var goErr error
 
 	// Prevent DDos attack by do some easy process for user e.g. captcha is not good way!
 	err = phraseCaptchas.Check(req.CaptchaID)
@@ -106,26 +108,43 @@ func registerNewPerson(st *achaemenid.Stream, req *registerNewPersonReq) (res *r
 		return
 	}
 
-	var OTPPattern = make([]byte, 32)
-	_, err = rand.Read(OTPPattern)
-	// Note that err == nil only if we read len(OTPPattern) bytes.
+	var otpReq = otp.GenerateTimeOTPReq{
+		Hasher:     sha512.New512_256(),
+		SecretKey:  smsOTPSecurityKey,
+		Additional: make([]byte, 8),
+		Period:     smsOTPPeriod,
+		Digits:     smsOTPDigits,
+	}
+	syllab.SetUInt64(otpReq.Additional, 0, req.PhoneNumber)
+	var timeOTP uint64
+	timeOTP, err = otp.GenerateTimeOTP(&otpReq)
 	if err != nil {
-		// err =
+		return
+	}
+	if req.PhoneOTP != timeOTP {
+		return nil, otp.ErrOTPWrongNumber
+	}
+
+	var OTPPattern = make([]byte, 32)
+	_, goErr = rand.Read(OTPPattern)
+	// Note that err == nil only if we read len(OTPPattern) bytes.
+	if goErr != nil {
+		err = ErrPlatformBadSituation
 		return
 	}
 
 	var SecurityKey = make([]byte, 32)
-	_, err = rand.Read(SecurityKey)
+	_, goErr = rand.Read(SecurityKey)
 	// Note that err == nil only if we read len(SecurityKey) bytes.
-	if err != nil {
-		// err =
+	if goErr != nil {
+		err = ErrPlatformBadSituation
 		return
 	}
 
 	var pa = datastore.PersonAuthentication{
 		AppInstanceID:    server.Nodes.LocalNode.InstanceID,
 		UserConnectionID: st.Connection.ID,
-		PersonID:         uuid.NewV4(), // Make new User UUID.
+		PersonID:         uuid.Random32Byte(),
 		ReferentPersonID: st.Connection.UserID,
 		Status:           datastore.PersonAuthenticationNotForceUse2Factor,
 		PasswordHash:     req.PasswordHash,
@@ -133,18 +152,32 @@ func registerNewPerson(st *achaemenid.Stream, req *registerNewPersonReq) (res *r
 	}
 	copy(pa.OTPPattern[:], OTPPattern[:])
 	copy(pa.SecurityKey[:], SecurityKey[:])
-
-	// Store pa to datastore!
-	err = pa.Set()
-	if err != nil {
-		// TODO:::
+	if req.OTPAdditional != 0 {
+		pa.Status = datastore.PersonAuthenticationForceUse2Factor
 	}
 
-	// Index desire data
+	var registerPersonNumberReq = registerPersonNumberReq{
+		PersonID:    pa.PersonID,
+		PhoneNumber: req.PhoneNumber,
+	}
+	err = registerPersonNumber(st, &registerPersonNumberReq, true)
+	if err != nil {
+		return
+	}
+
+	err = pa.Set()
+	if err != nil {
+		// TODO::: can't easily return due to person number registered successfully!
+		return
+	}
+
 	pa.IndexPersonID()
-	pa.IndexRegisterTime()
-	if st.Connection.UserType != 0 {
-		pa.IndexReferentPersonID()
+	pa.IndexPersonIDforRegisterTime()
+	if st.Connection.UserType != achaemenid.UserTypeGuest {
+		pa.IndexPersonIDforReferentPersonID()
+	} else {
+		st.Connection.UserID = pa.PersonID
+		st.Connection.UserType = achaemenid.UserTypePerson
 	}
 
 	res = &registerNewPersonRes{
@@ -152,46 +185,130 @@ func registerNewPerson(st *achaemenid.Stream, req *registerNewPersonReq) (res *r
 		OTPPattern:  pa.OTPPattern,
 		SecurityKey: pa.SecurityKey,
 	}
-
 	return
 }
 
-func (req *registerNewPersonReq) validator() (err error) {
-	return
-}
+/*
+	Request Encoders & Decoders
+*/
 
-func (req *registerNewPersonReq) syllabDecoder(buf []byte) (err error) {
-	req.PhoneNumber = uint64(buf[0]) | uint64(buf[1])<<8 | uint64(buf[2])<<16 | uint64(buf[3])<<24 | uint64(buf[4])<<32 | uint64(buf[5])<<40 | uint64(buf[6])<<48 | uint64(buf[7])<<56
-	req.PhoneOTP = uint64(buf[8]) | uint64(buf[9])<<8 | uint64(buf[10])<<16 | uint64(buf[11])<<24 | uint64(buf[12])<<32 | uint64(buf[13])<<40 | uint64(buf[14])<<48 | uint64(buf[15])<<56
+func (req *registerNewPersonReq) syllabDecoder(buf []byte) (err *er.Error) {
+	if uint32(len(buf)) < req.syllabStackLen() {
+		err = syllab.ErrSyllabDecodeSmallSlice
+		return
+	}
+
+	req.PhoneNumber = syllab.GetUInt64(buf, 0)
+	req.PhoneOTP = syllab.GetUInt64(buf, 8)
 	copy(req.CaptchaID[:], buf[16:])
 	copy(req.PasswordHash[:], buf[32:])
-	req.OTPAdditional = int32(buf[64]) | int32(buf[65])<<8 | int32(buf[66])<<16 | int32(buf[67])<<24
-
+	req.OTPAdditional = syllab.GetInt32(buf, 64)
 	return
 }
 
-func (req *registerNewPersonReq) jsonDecoder(buf []byte) (err error) {
-	// TODO::: Help to complete json generator package to have better performance!
-	err = json.UnMarshal(buf, req)
+func (req *registerNewPersonReq) syllabStackLen() (ln uint32) {
+	return 68
+}
+
+func (req *registerNewPersonReq) jsonDecoder(buf []byte) (err *er.Error) {
+	var decoder = json.DecoderUnsafeMinifed{
+		Buf: buf,
+	}
+	for len(decoder.Buf) > 2 {
+		decoder.Offset(2)
+		switch decoder.Buf[0] {
+		case 'C':
+			decoder.SetFounded()
+			decoder.Offset(12)
+			err = decoder.DecodeByteArrayAsBase64(req.CaptchaID[:])
+			if err != nil {
+				return
+			}
+		case 'P':
+			switch decoder.Buf[5] {
+			case 'N':
+				decoder.SetFounded()
+				decoder.Offset(13)
+				req.PhoneNumber, err = decoder.DecodeUInt64()
+				if err != nil {
+					return
+				}
+			case 'O':
+				decoder.SetFounded()
+				decoder.Offset(10)
+				req.PhoneOTP, err = decoder.DecodeUInt64()
+				if err != nil {
+					return
+				}
+			case 'o':
+				decoder.SetFounded()
+				decoder.Offset(15)
+				err = decoder.DecodeByteArrayAsBase64(req.PasswordHash[:])
+				if err != nil {
+					return
+				}
+			}
+		case 'O':
+			decoder.SetFounded()
+			decoder.Offset(15)
+			var num int64
+			num, err = decoder.DecodeInt64()
+			if err != nil {
+				return
+			}
+			req.OTPAdditional = int32(num)
+		}
+
+		err = decoder.IterationCheck()
+		if err != nil {
+			return
+		}
+	}
 	return
 }
 
-// offset add free space by given number at begging of return slice that almost just use in sRPC protocol! It can be 0!!
-func (res *registerNewPersonRes) syllabEncoder(offset int) (buf []byte) {
-	var hsi int = 80 // Heap start index || Stack size!
-	var ln int = hsi      // len of strings, slices, maps, ...
-	buf = make([]byte, ln+offset)
-	var b = buf[offset:]
+/*
+	Response Encoders & Decoders
+*/
 
-	copy(b[0:], res.PersonID[:])
-	copy(b[16:], res.OTPPattern[:])
-	copy(b[48:], res.SecurityKey[:])
-
+func (res *registerNewPersonRes) syllabEncoder(buf []byte) {
+	copy(buf[0:], res.PersonID[:])
+	copy(buf[16:], res.OTPPattern[:])
+	copy(buf[48:], res.SecurityKey[:])
 	return
 }
 
-func (res *registerNewPersonRes) jsonEncoder() (buf []byte, err error) {
-	// TODO::: Help to complete json generator package to have better performance!
-	buf, err = json.Marshal(res)
+func (res *registerNewPersonRes) syllabStackLen() (ln uint32) {
+	return 80
+}
+
+func (res *registerNewPersonRes) syllabHeapLen() (ln uint32) {
+	return
+}
+
+func (res *registerNewPersonRes) syllabLen() (ln int) {
+	return int(res.syllabStackLen() + res.syllabHeapLen())
+}
+
+func (res *registerNewPersonRes) jsonEncoder() (buf []byte) {
+	var encoder = json.Encoder{
+		Buf: make([]byte, 0, res.jsonLen()),
+	}
+
+	encoder.EncodeString(`{"PersonID":"`)
+	encoder.EncodeByteSliceAsBase64(res.PersonID[:])
+
+	encoder.EncodeString(`","OTPPattern":"`)
+	encoder.EncodeByteSliceAsBase64(res.OTPPattern[:])
+
+	encoder.EncodeString(`","SecurityKey":"`)
+	encoder.EncodeByteSliceAsBase64(res.SecurityKey[:])
+
+	encoder.EncodeString(`"}`)
+	return encoder.Buf
+}
+
+func (res *registerNewPersonRes) jsonLen() (ln int) {
+	ln = 177
 	return
 }
