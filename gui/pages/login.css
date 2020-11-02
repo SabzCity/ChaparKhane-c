@@ -49,3 +49,24 @@ article .input {
     text-align: center;
     padding: 25px;
 }
+
+.captchaContainer {
+    display: flex;
+}
+
+.loggedInUserContainer {
+    display: flex;
+    flex-direction: row;
+}
+
+.loggedInUserDetails {
+    flex-direction: column;
+    padding: 5px 40px;
+}
+
+img.userPicture {
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    padding: 8px;
+}

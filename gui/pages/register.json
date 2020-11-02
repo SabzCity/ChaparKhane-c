@@ -1,5 +1,5 @@
 {
-    "en": [        
+    "en": [
         "Register",
         "Register",
         "",
@@ -42,10 +42,13 @@
         "Last captcha Expired, Try new one",
         "Enter captcha not valid",
         "Not received, Try again in ",
-        "Resend OTP",
-        "Required Field"
+        "Send OTP",
+        "Required Field",
+        "This phone number has been registered already",
+        "OTP not enter correctly",
+        "Minutes"
     ],
-    "fa": [        
+    "fa": [
         "ثبت نام",
         "ثبت نام",
         "",
@@ -88,7 +91,10 @@
         "تصویر منقضی شده است، دوباره تلاش کنید",
         "متن در تصویر اشتباه وارد شده است",
         "پیامی دریافت نکردید، دوباره تلاش کنید در ",
-        "ارسال مجدد",
-        "ورود این  فیلد اجباری است"
+        "ارسال رمز یکبار مصرف",
+        "ورود این  فیلد اجباری است",
+        "این شماره تلفن قبلا ثبت نام شده است",
+        "رمز یکبار مصرف ارسالی به گوشی به درستی وارد نشده است",
+        "دقیقه"
     ]
 }

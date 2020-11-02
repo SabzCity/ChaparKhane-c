@@ -2,18 +2,32 @@
 
 <header class="app-bar">
     <span class="left">
-        ${Application.Widgets["hamburger-menu"].ConnectedCallback()}
+        ${widgets["hamburger-menu"].ConnectedCallback()}
         <a href="/"><img alt="SabzCity logo" src="/images/app-icon-48x48.png" /></a>
     </span>
 
     <span class="center"></span>
 
     <span class="right">
-        ${Application.Widgets["user-menu"].ConnectedCallback()}
-        ${Application.Widgets["service-menu"].ConnectedCallback()}
+        ${widgets["user-menu"].ConnectedCallback()}
+        ${widgets["service-menu"].ConnectedCallback()}
     </span>
 </header>
 
 <main>
-    My home page
+    <article class="layout-grid">
+        <header class="span-12">
+            <h1 class="typography--headline5">${LocaleText[5]}</h1>
+        </header>
+        <section>
+            <div class="typography--caption">${LocaleText[6]}</div>
+            <div id="userNumber"></div>
+            
+            <div class="typography--caption">${LocaleText[7]}</div>
+            <div id="userNumberWriteTime"></div>
+            
+            <div class="typography--caption">${LocaleText[8]}</div>
+            <div id="userNumberStatus"></div>
+        </section>
+    </article>
 </main>

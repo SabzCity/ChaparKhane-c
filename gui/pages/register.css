@@ -31,7 +31,7 @@ article>div {
     height: 28px;
 }
 
-.social-register div {
+.social-register div, #otpContainer {
     display: flex;
     flex-direction: row;
     text-align: center;

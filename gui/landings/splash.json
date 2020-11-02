@@ -1,4 +1,12 @@
 {
-    "en": [],
-    "fa": []
+    "en": [
+        "POWERED BY",
+        "SABZCITY OPEN-SOURCE PLATFORM",
+        "Please Enable Javascript to be able to use this web app."
+    ],
+    "fa": [
+        "قدرت گرفته شده از",
+        "پلتفرم متن باز شهرسبز",
+        "لطفا برای اجرای این وب سایت جاوااسکریپت مرورگر خود را فعال نمایید"
+    ]
 }

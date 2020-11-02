@@ -1,0 +1,17 @@
+/* For license and copyright information please see LEGAL file in repository */
+
+.layout-grid {
+    margin: 10px;
+}
+
+article>header {
+    text-align: center;
+}
+
+article>footer {
+    text-align: center;
+}
+
+article>article {
+    padding: 10px;
+}

@@ -1,0 +1,18 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<article class="loggedInUserContainer">
+    <div class="loggedInUserDetails">
+        <div class="typography--caption">${LocaleText[45]}</div>
+        <div>${UserPreferences.UserName}</div>
+    </div>
+
+    <div class="loggedInUserDetails">
+        <div class="typography--caption">${LocaleText[46]}</div>
+        <div>${UserPreferences.UserNumber}</div>
+    </div>
+
+    <img class="userPicture" alt="${LocaleText[42]}" src="${UserPreferences.UserPicture}" />
+    <button class="icon" title="${LocaleText[44]}" onclick="loginPageLogout('${UserPreferences.UserID}')">
+        <i class="icons-font">clear</i>
+    </button>
+</article>
