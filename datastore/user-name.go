@@ -4,13 +4,14 @@ package datastore
 
 import (
 	"crypto/sha512"
-	"unsafe"
 
 	etime "../libgo/earth-time"
+	er "../libgo/error"
 	"../libgo/ganjine"
 	gsdk "../libgo/ganjine-sdk"
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
+	"../libgo/log"
 	"../libgo/syllab"
 )
 
@@ -45,13 +46,13 @@ type UserName struct {
 	RecordStructureID uint64
 	RecordSize        uint64
 	WriteTime         int64
-	OwnerAppID        [16]byte
+	OwnerAppID        [32]byte
 
 	/* Unique data */
-	AppInstanceID    [16]byte // Store to remember which app instance set||chanaged this record!
-	UserConnectionID [16]byte // Store to remember which user connection set||chanaged this record!
-	UserID           [16]byte `ganjine:"Immutable,Unique"`
-	Username         string   `ganjine:"Immutable,Unique"` // It is not replace of user ID! It usually use to find user by their friends!
+	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
+	UserConnectionID [32]byte // Store to remember which user connection set||chanaged this record!
+	UserID           [32]byte `ganjine:"Unique" hash-index:"RecordID"`
+	Username         string   `hash-index:"UserID"` // It is not replace of user ID! It usually use to find user by their friends!
 	Status           UserNameStatus
 }
 
@@ -66,11 +67,11 @@ const (
 )
 
 // Set method set some data and write entire UserName record!
-func (un *UserName) Set() (err error) {
+func (un *UserName) Set() (err *er.Error) {
 	un.RecordStructureID = userNameStructureID
 	un.RecordSize = un.syllabLen()
 	un.WriteTime = etime.Now()
-	un.OwnerAppID = server.Manifest.AppID
+	un.OwnerAppID = server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -88,19 +89,19 @@ func (un *UserName) Set() (err error) {
 }
 
 // GetByRecordID method read all existing record data by given RecordID!
-func (un *UserName) GetByRecordID() (err error) {
+func (un *UserName) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
 		RecordID: un.RecordID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
 	if err != nil {
-		return err
+		return
 	}
 
 	err = un.syllabDecoder(res.Record)
 	if err != nil {
-		return err
+		return
 	}
 
 	if un.RecordStructureID != userNameStructureID {
@@ -109,56 +110,46 @@ func (un *UserName) GetByRecordID() (err error) {
 	return
 }
 
-// GetByUserID method find and read last version of record by given UserID
-func (un *UserName) GetByUserID() (err error) {
-	var indexReq = &gs.FindRecordsReq{
-		IndexHash: un.HashUserID(),
-		Offset:    18446744073709551615,
-		Limit:     0,
+// GetLastByUserID method find and read last version of record by given UserID
+func (un *UserName) GetLastByUserID() (err *er.Error) {
+	var indexReq = &gs.HashIndexGetValuesReq{
+		IndexKey: un.hashUserIDfoRecordID(),
+		Offset:   18446744073709551615,
+		Limit:    1,
 	}
-	var indexRes *gs.FindRecordsRes
-	indexRes, err = gsdk.FindRecords(cluster, indexReq)
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
 	if err != nil {
-		return err
+		return
 	}
 
-	var ln = len(indexRes.RecordIDs)
-	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	ln--
-	for ; ln > 0; ln-- {
-		un.RecordID = indexRes.RecordIDs[ln]
-		err = un.GetByRecordID()
-		if err != ganjine.ErrGanjineMisMatchedStructureID {
-			return
-		}
+	un.RecordID = indexRes.IndexValues[0]
+	err = un.GetByRecordID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", userNameStructureID)
 	}
-	return ganjine.ErrGanjineRecordNotFound
+	return
 }
 
-// GetByUserName method find and read last version of record by given UserName
-func (un *UserName) GetByUserName() (err error) {
-	var indexReq = &gs.FindRecordsReq{
-		IndexHash: un.HashUserName(),
-		Offset:    18446744073709551615,
-		Limit:     0,
+// GetLastByUserName method find and read last version of record by given UserName
+func (un *UserName) GetLastByUserName() (err *er.Error) {
+	var indexReq = &gs.HashIndexGetValuesReq{
+		IndexKey: un.hashUserNameforUserID(),
+		Offset:   18446744073709551615,
+		Limit:    1,
 	}
-	var indexRes *gs.FindRecordsRes
-	indexRes, err = gsdk.FindRecords(cluster, indexReq)
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
 	if err != nil {
-		return err
+		return
 	}
 
-	var ln = len(indexRes.RecordIDs)
-	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	ln--
-	for ; ln > 0; ln-- {
-		un.RecordID = indexRes.RecordIDs[ln]
-		err = un.GetByRecordID()
-		if err != ganjine.ErrGanjineMisMatchedStructureID {
-			return
-		}
+	un.UserID = indexRes.IndexValues[0]
+	err = un.GetLastByUserID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", userNameStructureID)
 	}
-	return ganjine.ErrGanjineRecordNotFound
+	return
 }
 
 /*
@@ -168,20 +159,19 @@ func (un *UserName) GetByUserName() (err error) {
 // IndexUserID index Unique-Field(UserID) chain to retrieve last record version fast later.
 // Call in each update to the exiting record!
 func (un *UserName) IndexUserID() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: un.HashUserID(),
-		RecordID:  un.RecordID,
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   un.hashUserIDfoRecordID(),
+		IndexValue: un.RecordID,
 	}
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashUserID hash userNameStructureID + un.UserID
-func (un *UserName) HashUserID() (hash [32]byte) {
-	var buf = make([]byte, 24) // 8+16
+func (un *UserName) hashUserIDfoRecordID() (hash [32]byte) {
+	var buf = make([]byte, 40) // 8+32
 	syllab.SetUInt64(buf, 0, userNameStructureID)
 	copy(buf[8:], un.UserID[:])
 	return sha512.Sum512_256(buf)
@@ -194,19 +184,18 @@ func (un *UserName) HashUserID() (hash [32]byte) {
 // IndexUserName index to retrieve all un.UserID owned by given Username later.
 // Don't call in update to an exiting record!
 func (un *UserName) IndexUserName() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: un.HashUserName(),
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   un.hashUserNameforUserID(),
+		IndexValue: un.UserID,
 	}
-	copy(indexRequest.RecordID[:], un.UserID[:])
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashUserName hash userNameStructureID + un.Username
-func (un *UserName) HashUserName() (hash [32]byte) {
+func (un *UserName) hashUserNameforUserID() (hash [32]byte) {
 	var buf = make([]byte, 8+len(un.Username))
 	syllab.SetUInt64(buf, 0, userNameStructureID)
 	copy(buf[8:], un.Username)
@@ -217,10 +206,7 @@ func (un *UserName) HashUserName() (hash [32]byte) {
 	-- Syllab Encoder & Decoder --
 */
 
-func (un *UserName) syllabDecoder(buf []byte) (err error) {
-	var add, ln uint32
-	var tempSlice []byte
-
+func (un *UserName) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < un.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -232,22 +218,17 @@ func (un *UserName) syllabDecoder(buf []byte) (err error) {
 	un.WriteTime = syllab.GetInt64(buf, 48)
 	copy(un.OwnerAppID[:], buf[56:])
 
-	copy(un.AppInstanceID[:], buf[72:])
-	copy(un.UserConnectionID[:], buf[88:])
-	copy(un.UserID[:], buf[104:])
-	add = syllab.GetUInt32(buf, 120)
-	ln = syllab.GetUInt32(buf, 124)
-	// It must check len of every heap access but due to encode of data is safe proccess by us, skip it here!
-	tempSlice = buf[add : add+ln]
-	un.Username = *(*string)(unsafe.Pointer(&tempSlice))
-	un.Status = UserNameStatus(syllab.GetUInt8(buf, 128))
+	copy(un.AppInstanceID[:], buf[88:])
+	copy(un.UserConnectionID[:], buf[120:])
+	copy(un.UserID[:], buf[152:])
+	un.Username = syllab.UnsafeGetString(buf, 184)
+	un.Status = UserNameStatus(syllab.GetUInt8(buf, 192))
 	return
 }
 
 func (un *UserName) syllabEncoder() (buf []byte) {
 	buf = make([]byte, un.syllabLen())
 	var hsi uint32 = un.syllabStackLen() // Heap start index || Stack size!
-	var ln uint32                        // len of strings, slices, maps, ...
 
 	// copy(buf[0:], un.RecordID[:])
 	syllab.SetUInt64(buf, 32, un.RecordStructureID)
@@ -255,19 +236,16 @@ func (un *UserName) syllabEncoder() (buf []byte) {
 	syllab.SetInt64(buf, 48, un.WriteTime)
 	copy(buf[56:], un.OwnerAppID[:])
 
-	copy(buf[72:], un.AppInstanceID[:])
-	copy(buf[88:], un.UserConnectionID[:])
-	copy(buf[104:], un.UserID[:])
-	ln = uint32(len(un.Username))
-	syllab.SetUInt32(buf, 120, hsi)
-	syllab.SetUInt32(buf, 124, ln)
-	copy(buf[hsi:], un.Username)
-	syllab.SetUInt8(buf, 128, uint8(un.Status))
+	copy(buf[88:], un.AppInstanceID[:])
+	copy(buf[120:], un.UserConnectionID[:])
+	copy(buf[152:], un.UserID[:])
+	hsi = syllab.SetString(buf, un.Username, 184, hsi)
+	syllab.SetUInt8(buf, 192, uint8(un.Status))
 	return
 }
 
 func (un *UserName) syllabStackLen() (ln uint32) {
-	return 129 // fixed size data + variables data add&&len
+	return 193
 }
 
 func (un *UserName) syllabHeapLen() (ln uint32) {

@@ -6,10 +6,12 @@ import (
 	"crypto/sha512"
 
 	etime "../libgo/earth-time"
+	er "../libgo/error"
 	"../libgo/ganjine"
 	gsdk "../libgo/ganjine-sdk"
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
+	"../libgo/log"
 	"../libgo/syllab"
 )
 
@@ -44,12 +46,12 @@ type PersonNumber struct {
 	RecordStructureID uint64
 	RecordSize        uint64
 	WriteTime         int64
-	OwnerAppID        [16]byte
+	OwnerAppID        [32]byte
 
 	/* Unique data */
-	AppInstanceID    [16]byte // Store to remember which app instance set||chanaged this record!
-	UserConnectionID [16]byte // Store to remember which user connection set||chanaged this record!
-	PersonID         [16]byte `ganjine:"Immutable,Unique"`
+	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
+	UserConnectionID [32]byte // Store to remember which user connection set||chanaged this record!
+	PersonID         [32]byte `ganjine:"Immutable,Unique" ganjine-index:"Number"`
 	Number           uint64   `ganjine:"Unique"` // must start with country code e.g. (00)98-912-345-6789
 	Status           PersonNumberStatus
 }
@@ -59,17 +61,18 @@ type PersonNumberStatus uint8
 
 // PersonNumber status
 const (
-	PersonNumberRegister PersonNumberStatus = iota
+	PersonNumberUnset PersonNumberStatus = iota
+	PersonNumberRegister
 	PersonNumberRemove
-	PersonNumberBlockByJustice
+	PersonNumberBlockedByJustice
 )
 
 // Set method set some data and write entire PersonNumber record!
-func (pn *PersonNumber) Set() (err error) {
+func (pn *PersonNumber) Set() (err *er.Error) {
 	pn.RecordStructureID = personNumberStructureID
 	pn.RecordSize = pn.syllabLen()
 	pn.WriteTime = etime.Now()
-	pn.OwnerAppID = server.Manifest.AppID
+	pn.OwnerAppID = server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -80,26 +83,28 @@ func (pn *PersonNumber) Set() (err error) {
 
 	err = gsdk.SetRecord(cluster, &req)
 	if err != nil {
+		if log.DebugMode {
+			log.Debug("Ganjine - Set Record:", err)
+		}
 		// TODO::: Handle error situation
 	}
-
 	return
 }
 
 // GetByRecordID method read all existing record data by given RecordID!
-func (pn *PersonNumber) GetByRecordID() (err error) {
+func (pn *PersonNumber) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
 		RecordID: pn.RecordID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
 	if err != nil {
-		return err
+		return
 	}
 
 	err = pn.syllabDecoder(res.Record)
 	if err != nil {
-		return err
+		return
 	}
 
 	if pn.RecordStructureID != personNumberStructureID {
@@ -108,56 +113,46 @@ func (pn *PersonNumber) GetByRecordID() (err error) {
 	return
 }
 
-// GetByPersonID method find and read last version of record by given PersonID
-func (pn *PersonNumber) GetByPersonID() (err error) {
-	var indexReq = &gs.FindRecordsReq{
-		IndexHash: pn.HashPersonID(),
-		Offset:    18446744073709551615,
-		Limit:     0,
+// GetLastByPersonID method find and read last version of record by given PersonID
+func (pn *PersonNumber) GetLastByPersonID() (err *er.Error) {
+	var indexReq = &gs.HashIndexGetValuesReq{
+		IndexKey: pn.hashPersonIDforRecordID(),
+		Offset:   18446744073709551615,
+		Limit:    1,
 	}
-	var indexRes *gs.FindRecordsRes
-	indexRes, err = gsdk.FindRecords(cluster, indexReq)
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
 	if err != nil {
-		return err
+		return
 	}
 
-	var ln = len(indexRes.RecordIDs)
-	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	ln--
-	for ; ln > 0; ln-- {
-		pn.RecordID = indexRes.RecordIDs[ln]
-		err = pn.GetByRecordID()
-		if err != ganjine.ErrGanjineMisMatchedStructureID {
-			return
-		}
+	pn.RecordID = indexRes.IndexValues[0]
+	err = pn.GetByRecordID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", personNumberStructureID)
 	}
-	return ganjine.ErrGanjineRecordNotFound
+	return
 }
 
-// GetByNumber method find and read last version of record by given Number
-func (pn *PersonNumber) GetByNumber() (err error) {
-	var indexReq = &gs.FindRecordsReq{
-		IndexHash: pn.HashNumber(),
-		Offset:    18446744073709551615,
-		Limit:     0,
+// GetLastByNumber method find and read last version of record by given Number
+func (pn *PersonNumber) GetLastByNumber() (err *er.Error) {
+	var indexReq = &gs.HashIndexGetValuesReq{
+		IndexKey: pn.hashNumberforPersonID(),
+		Offset:   18446744073709551615,
+		Limit:    1,
 	}
-	var indexRes *gs.FindRecordsRes
-	indexRes, err = gsdk.FindRecords(cluster, indexReq)
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
 	if err != nil {
-		return err
+		return
 	}
 
-	var ln = len(indexRes.RecordIDs)
-	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	ln--
-	for ; ln > 0; ln-- {
-		pn.RecordID = indexRes.RecordIDs[ln]
-		err = pn.GetByRecordID()
-		if err != ganjine.ErrGanjineMisMatchedStructureID {
-			return
-		}
+	pn.PersonID = indexRes.IndexValues[0]
+	err = pn.GetLastByPersonID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", personNumberStructureID)
 	}
-	return ganjine.ErrGanjineRecordNotFound
+	return
 }
 
 /*
@@ -166,20 +161,22 @@ func (pn *PersonNumber) GetByNumber() (err error) {
 
 // IndexPersonID index pn.PersonID to retrieve record fast later.
 func (pn *PersonNumber) IndexPersonID() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pn.HashPersonID(),
-		RecordID:  pn.RecordID,
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   pn.hashPersonIDforRecordID(),
+		IndexValue: pn.RecordID,
 	}
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
+		if log.DebugMode {
+			log.Debug("Ganjine - Set Index:", err)
+		}
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashPersonID hash personNumberStructureID + pn.PersonID
-func (pn *PersonNumber) HashPersonID() (hash [32]byte) {
-	var buf = make([]byte, 24) // 8+16
+func (pn *PersonNumber) hashPersonIDforRecordID() (hash [32]byte) {
+	var buf = make([]byte, 40) // 8+32
 	syllab.SetUInt64(buf, 0, personNumberStructureID)
 	copy(buf[8:], pn.PersonID[:])
 	return sha512.Sum512_256(buf)
@@ -191,19 +188,21 @@ func (pn *PersonNumber) HashPersonID() (hash [32]byte) {
 
 // IndexNumber index pn.Number to retrieve record fast later.
 func (pn *PersonNumber) IndexNumber() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pn.HashNumber(),
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   pn.hashNumberforPersonID(),
+		IndexValue: pn.PersonID,
 	}
-	copy(indexRequest.RecordID[:], pn.PersonID[:])
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
+		if log.DebugMode {
+			log.Debug("Ganjine - Set Index:", err)
+		}
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashNumber hash personNumberStructureID + pn.Number
-func (pn *PersonNumber) HashNumber() (hash [32]byte) {
+func (pn *PersonNumber) hashNumberforPersonID() (hash [32]byte) {
 	var buf = make([]byte, 16) // 8+8
 	syllab.SetUInt64(buf, 0, personNumberStructureID)
 	syllab.SetUInt64(buf, 8, pn.Number)
@@ -214,7 +213,7 @@ func (pn *PersonNumber) HashNumber() (hash [32]byte) {
 	-- Syllab Encoder & Decoder --
 */
 
-func (pn *PersonNumber) syllabDecoder(buf []byte) (err error) {
+func (pn *PersonNumber) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < pn.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -226,11 +225,11 @@ func (pn *PersonNumber) syllabDecoder(buf []byte) (err error) {
 	pn.WriteTime = syllab.GetInt64(buf, 48)
 	copy(pn.OwnerAppID[:], buf[56:])
 
-	copy(pn.AppInstanceID[:], buf[72:])
-	copy(pn.UserConnectionID[:], buf[88:])
-	copy(pn.PersonID[:], buf[104:])
-	pn.Number = syllab.GetUInt64(buf, 120)
-	pn.Status = PersonNumberStatus(syllab.GetUInt8(buf, 128))
+	copy(pn.AppInstanceID[:], buf[88:])
+	copy(pn.UserConnectionID[:], buf[120:])
+	copy(pn.PersonID[:], buf[152:])
+	pn.Number = syllab.GetUInt64(buf, 184)
+	pn.Status = PersonNumberStatus(syllab.GetUInt8(buf, 192))
 	return
 }
 
@@ -243,16 +242,16 @@ func (pn *PersonNumber) syllabEncoder() (buf []byte) {
 	syllab.SetInt64(buf, 48, pn.WriteTime)
 	copy(buf[56:], pn.OwnerAppID[:])
 
-	copy(buf[72:], pn.AppInstanceID[:])
-	copy(buf[88:], pn.UserConnectionID[:])
-	copy(buf[104:], pn.PersonID[:])
-	syllab.SetUInt64(buf, 120, pn.Number)
-	syllab.SetUInt8(buf, 128, uint8(pn.Status))
+	copy(buf[88:], pn.AppInstanceID[:])
+	copy(buf[120:], pn.UserConnectionID[:])
+	copy(buf[152:], pn.PersonID[:])
+	syllab.SetUInt64(buf, 184, pn.Number)
+	syllab.SetUInt8(buf, 192, uint8(pn.Status))
 	return
 }
 
 func (pn *PersonNumber) syllabStackLen() (ln uint32) {
-	return 129 // fixed size data + variables data add&&len
+	return 193
 }
 
 func (pn *PersonNumber) syllabHeapLen() (ln uint32) {

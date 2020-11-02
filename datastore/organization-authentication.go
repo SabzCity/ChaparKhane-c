@@ -6,10 +6,12 @@ import (
 	"crypto/sha512"
 
 	etime "../libgo/earth-time"
+	er "../libgo/error"
 	"../libgo/ganjine"
 	gsdk "../libgo/ganjine-sdk"
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
+	"../libgo/log"
 	"../libgo/syllab"
 )
 
@@ -22,12 +24,12 @@ var organizationAuthenticationStructure = ganjine.DataStructure{
 	IssueDate:         1600109379,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // Other structure name
-	ExpireInFavorOfID: 0,  // Other ServiceID! Handy ID or Hash of ExpireInFavorOf!
+	ExpireInFavorOfID: 0,  // Other StructureID! Handy ID or Hash of ExpireInFavorOf!
 	Status:            ganjine.DataStructureStatePreAlpha,
 	Structure:         OrganizationAuthentication{},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "OrganizationAuthentication",
+		lang.EnglishLanguage: "Organization Authentication",
 	},
 	Description: map[lang.Language]string{
 		lang.EnglishLanguage: `store organization information!
@@ -45,15 +47,16 @@ type OrganizationAuthentication struct {
 	RecordStructureID uint64
 	RecordSize        uint64
 	WriteTime         int64
-	OwnerAppID        [16]byte
+	OwnerAppID        [32]byte
 
 	/* Unique data */
-	AppInstanceID    [16]byte // Store to remember which app instance set||chanaged this record!
-	UserConnectionID [16]byte // Store to remember which user connection set||chanaged this record!
-	ID               [16]byte `ganjine:"Immutable,Unique"` // Organization UUID
-	Name             string   `ganjine:"Unique"`
-	Domain           string   `ganjine:"Unique"`
-	Status           OrganizationAuthenticationStatus
+	AppInstanceID         [32]byte // Store to remember which app instance set||chanaged this record!
+	UserConnectionID      [32]byte // Store to remember which user connection set||chanaged this record!
+	ID                    [32]byte `ganjine:"Immutable,Unique"` // Organization UUID
+	Name                  string   `ganjine:"Unique"`
+	Domain                string   `ganjine:"Unique"`
+	FinancialCreditAmount int64
+	Status                OrganizationAuthenticationStatus
 }
 
 // OrganizationAuthenticationStatus indicate OrganizationAuthentication record status
@@ -61,26 +64,22 @@ type OrganizationAuthenticationStatus uint8
 
 // OrganizationAuthentication status
 const (
-	// OrganizationStatusInactive indicate organization had been inactive and can't be use now!
-	OrganizationStatusInactive OrganizationAuthenticationStatus = iota
-	// OrganizationStatusBlocked
-	OrganizationStatusBlocked
-	// OrganizationStatusIdea
-	OrganizationStatusIdea
-	// OrganizationStatusStart
-	OrganizationStatusStart
-	// OrganizationStatusClosed can't be set to OrganizationProfitWithPhysicalPlace type!
-	OrganizationStatusClosed
-	// OrganizationStatusRegister
+	OrganizationStatusUnset OrganizationAuthenticationStatus = iota
 	OrganizationStatusRegister
+	OrganizationStatusInactive // organization had been inactive and can't be use now!
+	OrganizationStatusBlocked
+	OrganizationStatusIdea
+	OrganizationStatusStart
+	OrganizationStatusClosed // can't be set to OrganizationProfitWithPhysicalPlace type!
+
 )
 
 // Set method set some data and write entire OrganizationAuthentication record!
-func (oa *OrganizationAuthentication) Set() (err error) {
+func (oa *OrganizationAuthentication) Set() (err *er.Error) {
 	oa.RecordStructureID = organizationAuthenticationStructureID
 	oa.RecordSize = oa.syllabLen()
 	oa.WriteTime = etime.Now()
-	oa.OwnerAppID = server.Manifest.AppID
+	oa.OwnerAppID = server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -98,19 +97,19 @@ func (oa *OrganizationAuthentication) Set() (err error) {
 }
 
 // GetByRecordID method read all existing record data by given RecordID!
-func (oa *OrganizationAuthentication) GetByRecordID() (err error) {
+func (oa *OrganizationAuthentication) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
 		RecordID: oa.RecordID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
 	if err != nil {
-		return err
+		return
 	}
 
 	err = oa.syllabDecoder(res.Record)
 	if err != nil {
-		return err
+		return
 	}
 
 	if oa.RecordStructureID != organizationAuthenticationStructureID {
@@ -119,56 +118,67 @@ func (oa *OrganizationAuthentication) GetByRecordID() (err error) {
 	return
 }
 
-// GetByID method find and read last version of record by given ID
-func (oa *OrganizationAuthentication) GetByID() (err error) {
-	var indexReq = &gs.FindRecordsReq{
-		IndexHash: oa.HashID(),
-		Offset:    18446744073709551615,
-		Limit:     0,
+// GetLastByID find and read last version of record by given ID
+func (oa *OrganizationAuthentication) GetLastByID() (err *er.Error) {
+	var indexReq = &gs.HashIndexGetValuesReq{
+		IndexKey: oa.hashIDforRecord(),
+		Offset:   18446744073709551615,
+		Limit:    1,
 	}
-	var indexRes *gs.FindRecordsRes
-	indexRes, err = gsdk.FindRecords(cluster, indexReq)
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
 	if err != nil {
-		return err
+		return
 	}
 
-	var ln = len(indexRes.RecordIDs)
-	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	ln--
-	for ; ln > 0; ln-- {
-		oa.RecordID = indexRes.RecordIDs[ln]
-		err = oa.GetByRecordID()
-		if err != ganjine.ErrGanjineMisMatchedStructureID {
-			return
-		}
+	oa.RecordID = indexRes.IndexValues[0]
+	err = oa.GetByRecordID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", organizationAuthenticationStructureID)
 	}
-	return ganjine.ErrGanjineRecordNotFound
+	return
 }
 
-// GetByDomain method find and read last version of record by given Domain
-func (oa *OrganizationAuthentication) GetByDomain() (err error) {
-	var indexReq = &gs.FindRecordsReq{
-		IndexHash: oa.HashDomain(),
-		Offset:    18446744073709551615,
-		Limit:     0,
+// GetLastByName find and read last version of record by given org name
+func (oa *OrganizationAuthentication) GetLastByName() (err *er.Error) {
+	var indexReq = &gs.HashIndexGetValuesReq{
+		IndexKey: oa.hashNameforID(),
+		Offset:   18446744073709551615,
+		Limit:    1,
 	}
-	var indexRes *gs.FindRecordsRes
-	indexRes, err = gsdk.FindRecords(cluster, indexReq)
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
 	if err != nil {
-		return err
+		return
 	}
 
-	var ln = len(indexRes.RecordIDs)
-	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	ln--
-	for ; ln > 0; ln-- {
-		oa.RecordID = indexRes.RecordIDs[ln]
-		err = oa.GetByRecordID()
-		if err != ganjine.ErrGanjineMisMatchedStructureID {
-			return
-		}
+	oa.ID = indexRes.IndexValues[0]
+	err = oa.GetLastByID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", organizationAuthenticationStructureID)
 	}
-	return ganjine.ErrGanjineRecordNotFound
+	return
+}
+
+// GetLastByDomain find and read last version of record by given Domain
+func (oa *OrganizationAuthentication) GetLastByDomain() (err *er.Error) {
+	var indexReq = &gs.HashIndexGetValuesReq{
+		IndexKey: oa.hashDomainforID(),
+		Offset:   18446744073709551615,
+		Limit:    1,
+	}
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
+	if err != nil {
+		return
+	}
+
+	oa.ID = indexRes.IndexValues[0]
+	err = oa.GetLastByID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", organizationAuthenticationStructureID)
+	}
+	return
 }
 
 /*
@@ -177,20 +187,19 @@ func (oa *OrganizationAuthentication) GetByDomain() (err error) {
 
 // IndexID index oa.ID to retrieve record fast later.
 func (oa *OrganizationAuthentication) IndexID() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: oa.HashID(),
-		RecordID:  oa.RecordID,
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   oa.hashIDforRecord(),
+		IndexValue: oa.RecordID,
 	}
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashID hash organizationAuthenticationStructureID + oa.ID
-func (oa *OrganizationAuthentication) HashID() (hash [32]byte) {
-	var buf = make([]byte, 24) // 8+16
+func (oa *OrganizationAuthentication) hashIDforRecord() (hash [32]byte) {
+	var buf = make([]byte, 40) // 8+32
 	syllab.SetUInt64(buf, 0, organizationAuthenticationStructureID)
 	copy(buf[8:], oa.ID[:])
 	return sha512.Sum512_256(buf)
@@ -202,19 +211,18 @@ func (oa *OrganizationAuthentication) HashID() (hash [32]byte) {
 
 // IndexName index oa.Name to retrieve record fast later.
 func (oa *OrganizationAuthentication) IndexName() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: oa.HashName(),
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   oa.hashNameforID(),
+		IndexValue: oa.ID,
 	}
-	copy(indexRequest.RecordID[:], oa.ID[:])
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashName hash organizationAuthenticationStructureID + oa.Name
-func (oa *OrganizationAuthentication) HashName() (hash [32]byte) {
+func (oa *OrganizationAuthentication) hashNameforID() (hash [32]byte) {
 	var buf = make([]byte, 8+len(oa.Name))
 	syllab.SetUInt64(buf, 0, organizationAuthenticationStructureID)
 	copy(buf[8:], oa.Name)
@@ -223,19 +231,18 @@ func (oa *OrganizationAuthentication) HashName() (hash [32]byte) {
 
 // IndexDomain index oa.Domain to retrieve record fast later.
 func (oa *OrganizationAuthentication) IndexDomain() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: oa.HashDomain(),
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   oa.hashDomainforID(),
+		IndexValue: oa.ID,
 	}
-	copy(indexRequest.RecordID[:], oa.ID[:])
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashDomain hash organizationAuthenticationStructureID + Domain
-func (oa *OrganizationAuthentication) HashDomain() (hash [32]byte) {
+func (oa *OrganizationAuthentication) hashDomainforID() (hash [32]byte) {
 	var buf = make([]byte, 8+len(oa.Domain))
 	syllab.SetUInt64(buf, 0, organizationAuthenticationStructureID)
 	copy(buf[8:], oa.Domain)
@@ -246,9 +253,7 @@ func (oa *OrganizationAuthentication) HashDomain() (hash [32]byte) {
 	-- Syllab Encoder & Decoder --
 */
 
-func (oa *OrganizationAuthentication) syllabDecoder(buf []byte) (err error) {
-	var add, ln uint32
-
+func (oa *OrganizationAuthentication) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < oa.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -260,24 +265,19 @@ func (oa *OrganizationAuthentication) syllabDecoder(buf []byte) (err error) {
 	oa.WriteTime = syllab.GetInt64(buf, 48)
 	copy(oa.OwnerAppID[:], buf[56:])
 
-	copy(oa.AppInstanceID[:], buf[72:])
-	copy(oa.UserConnectionID[:], buf[88:])
-	copy(oa.ID[:], buf[104:])
-	add = syllab.GetUInt32(buf, 120)
-	ln = syllab.GetUInt32(buf, 124)
-	oa.Name = string(buf[add : add+ln])
-	add = syllab.GetUInt32(buf, 128)
-	ln = syllab.GetUInt32(buf, 132)
-	oa.Domain = string(buf[add : add+ln])
-	oa.Status = OrganizationAuthenticationStatus(syllab.GetUInt8(buf, 136))
-
+	copy(oa.AppInstanceID[:], buf[88:])
+	copy(oa.UserConnectionID[:], buf[120:])
+	copy(oa.ID[:], buf[152:])
+	oa.Name = syllab.UnsafeGetString(buf, 184)
+	oa.Domain = syllab.UnsafeGetString(buf, 192)
+	oa.FinancialCreditAmount = syllab.GetInt64(buf, 200)
+	oa.Status = OrganizationAuthenticationStatus(syllab.GetUInt8(buf, 208))
 	return
 }
 
 func (oa *OrganizationAuthentication) syllabEncoder() (buf []byte) {
 	buf = make([]byte, oa.syllabLen())
 	var hsi uint32 = oa.syllabStackLen() // Heap start index || Stack size!
-	var ln uint32                        // len of strings, slices, maps, ...
 
 	// copy(buf[0:], oa.RecordID[:])
 	syllab.SetUInt64(buf, 32, oa.RecordStructureID)
@@ -285,25 +285,18 @@ func (oa *OrganizationAuthentication) syllabEncoder() (buf []byte) {
 	syllab.SetInt64(buf, 48, oa.WriteTime)
 	copy(buf[56:], oa.OwnerAppID[:])
 
-	copy(buf[72:], oa.AppInstanceID[:])
-	copy(buf[88:], oa.UserConnectionID[:])
-	copy(buf[104:], oa.ID[:])
-	ln = uint32(len(oa.Name))
-	syllab.SetUInt32(buf, 120, hsi)
-	syllab.SetUInt32(buf, 124, ln)
-	copy(buf[hsi:], oa.Name)
-	hsi += ln
-	ln = uint32(len(oa.Domain))
-	syllab.SetUInt32(buf, 128, hsi)
-	syllab.SetUInt32(buf, 132, ln)
-	copy(buf[hsi:], oa.Domain)
-	hsi += ln
-	syllab.SetUInt8(buf, 136, uint8(oa.Status))
+	copy(buf[88:], oa.AppInstanceID[:])
+	copy(buf[120:], oa.UserConnectionID[:])
+	copy(buf[152:], oa.ID[:])
+	hsi = syllab.SetString(buf, oa.Name, 184, hsi)
+	syllab.SetString(buf, oa.Domain, 192, hsi)
+	syllab.SetInt64(buf, 200, oa.FinancialCreditAmount)
+	syllab.SetUInt8(buf, 208, uint8(oa.Status))
 	return
 }
 
 func (oa *OrganizationAuthentication) syllabStackLen() (ln uint32) {
-	return 137 // fixed size data + variables data add&&len
+	return 209
 }
 
 func (oa *OrganizationAuthentication) syllabHeapLen() (ln uint32) {

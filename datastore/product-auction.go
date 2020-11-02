@@ -6,10 +6,12 @@ import (
 	"crypto/sha512"
 
 	etime "../libgo/earth-time"
+	er "../libgo/error"
 	"../libgo/ganjine"
 	gsdk "../libgo/ganjine-sdk"
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
+	"../libgo/log"
 	"../libgo/syllab"
 )
 
@@ -44,14 +46,14 @@ type ProductAuction struct {
 	RecordStructureID uint64
 	RecordSize        uint64
 	WriteTime         int64
-	OwnerAppID        [16]byte
+	OwnerAppID        [32]byte
 
 	/* Unique data */
-	AppInstanceID    [16]byte // Store to remember which app instance set||chanaged this record!
-	UserConnectionID [16]byte // Store to remember which user connection set||chanaged this record!
-	OrgID            [16]byte // Sell can be register just by producer organization
-	ID               [16]byte `ganjine:"Immutable,Unique"`
-	WikiID           [16]byte `ganjine:"Immutable"`
+	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
+	UserConnectionID [32]byte // Store to remember which user connection set||chanaged this record!
+	OrgID            [32]byte // Sell can be register just by producer organization
+	ID               [32]byte `ganjine:"Immutable,Unique"`
+	WikiID           [32]byte `ganjine:"Immutable"`
 
 	Currency                     uint16 `ganjine:"Immutable"`
 	SuggestPrice                 uint64 // Some number part base on currency is Decimal part e.g. 8099 >> 80.99$
@@ -60,11 +62,12 @@ type ProductAuction struct {
 	SellerCommission             uint16 // ‱ PerMyriad decrease DiscountPerMyriad
 	PayablePrice                 uint64 // Some number base on currency is Decimal part e.g. 8099 >> 80.99$
 
-	DistributionCenterID [16]byte `ganjine:"Immutable"` // if not 0 means this sale is just for specific DistributionCenter!
+	DistributionCenterID [32]byte `ganjine:"Immutable"` // if not 0 means this sale is just for specific DistributionCenter!
 	MinNumBuy            uint64   // Minimum number to buy in this auction use for sale-off,...
 	StockNumber          uint64   // 0 for unlimited until related product exist to sell!
-	GroupID              [16]byte `ganjine:"Immutable"` // it can be 0 and means sale is global!
+	GroupID              [32]byte `ganjine:"Immutable"` // it can be 0 and means sale is global!
 	LiveUntil            int64
+	Type                 uint8 // https://en.wikipedia.org/wiki/Auction_theory
 	Status               ProductAuctionStatus
 }
 
@@ -89,11 +92,11 @@ const (
 )
 
 // Set method set some data and write entire ProductAuction record!
-func (pa *ProductAuction) Set() (err error) {
+func (pa *ProductAuction) Set() (err *er.Error) {
 	pa.RecordStructureID = productAuctionStructureID
 	pa.RecordSize = pa.syllabLen()
 	pa.WriteTime = etime.Now()
-	pa.OwnerAppID = server.Manifest.AppID
+	pa.OwnerAppID = server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -111,19 +114,19 @@ func (pa *ProductAuction) Set() (err error) {
 }
 
 // GetByRecordID method read all existing record data by given RecordID!
-func (pa *ProductAuction) GetByRecordID() (err error) {
+func (pa *ProductAuction) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
 		RecordID: pa.RecordID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
 	if err != nil {
-		return err
+		return
 	}
 
 	err = pa.syllabDecoder(res.Record)
 	if err != nil {
-		return err
+		return
 	}
 
 	if pa.RecordStructureID != productAuctionStructureID {
@@ -132,30 +135,25 @@ func (pa *ProductAuction) GetByRecordID() (err error) {
 	return
 }
 
-// GetByID method find and read last version of record by given pa.ID
-func (pa *ProductAuction) GetByID() (err error) {
-	var indexReq = &gs.FindRecordsReq{
-		IndexHash: pa.HashID(),
-		Offset:    18446744073709551615,
-		Limit:     0,
+// GetLatByID method find and read last version of record by given pa.ID
+func (pa *ProductAuction) GetLatByID() (err *er.Error) {
+	var indexReq = &gs.HashIndexGetValuesReq{
+		IndexKey: pa.hashIDforRecordID(),
+		Offset:   18446744073709551615,
+		Limit:    1,
 	}
-	var indexRes *gs.FindRecordsRes
-	indexRes, err = gsdk.FindRecords(cluster, indexReq)
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
 	if err != nil {
-		return err
+		return
 	}
 
-	var ln = len(indexRes.RecordIDs)
-	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	ln--
-	for ; ln > 0; ln-- {
-		pa.RecordID = indexRes.RecordIDs[ln]
-		err = pa.GetByRecordID()
-		if err != ganjine.ErrGanjineMisMatchedStructureID {
-			return
-		}
+	pa.RecordID = indexRes.IndexValues[0]
+	err = pa.GetByRecordID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", productAuctionStructureID)
 	}
-	return ganjine.ErrGanjineRecordNotFound
+	return
 }
 
 /*
@@ -164,20 +162,19 @@ func (pa *ProductAuction) GetByID() (err error) {
 
 // IndexID index pa.ID to retrieve record fast later.
 func (pa *ProductAuction) IndexID() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pa.HashID(),
-		RecordID:  pa.RecordID,
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   pa.hashIDforRecordID(),
+		IndexValue: pa.RecordID,
 	}
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashID hash productAuctionStructureID + pa.ID
-func (pa *ProductAuction) HashID() (hash [32]byte) {
-	var buf = make([]byte, 24) // 8+16
+func (pa *ProductAuction) hashIDforRecordID() (hash [32]byte) {
+	var buf = make([]byte, 40) // 8+32
 	syllab.SetUInt64(buf, 0, productAuctionStructureID)
 	copy(buf[8:], pa.ID[:])
 	return sha512.Sum512_256(buf)
@@ -189,20 +186,19 @@ func (pa *ProductAuction) HashID() (hash [32]byte) {
 
 // IndexWiki index pa.Wiki to retrieve record fast later.
 func (pa *ProductAuction) IndexWiki() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pa.HashWiki(),
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   pa.hashWikiIDforID(),
+		IndexValue: pa.ID,
 	}
-	copy(indexRequest.RecordID[:], pa.ID[:])
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashWiki hash productAuctionStructureID + pa.WikiID
-func (pa *ProductAuction) HashWiki() (hash [32]byte) {
-	var buf = make([]byte, 24) // 8+16
+func (pa *ProductAuction) hashWikiIDforID() (hash [32]byte) {
+	var buf = make([]byte, 40) // 8+32
 	syllab.SetUInt64(buf, 0, productAuctionStructureID)
 	copy(buf[8:], pa.WikiID[:])
 	return sha512.Sum512_256(buf)
@@ -210,45 +206,43 @@ func (pa *ProductAuction) HashWiki() (hash [32]byte) {
 
 // IndexWikiDC index pa.WikiDC to retrieve record fast later.
 func (pa *ProductAuction) IndexWikiDC() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pa.HashWikiDC(),
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   pa.hashWikiIDDistributionCenterIDforID(),
+		IndexValue: pa.ID,
 	}
-	copy(indexRequest.RecordID[:], pa.ID[:])
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashWikiDC hash productAuctionStructureID + pa.WikiID + pa.DistributionCenterID
-func (pa *ProductAuction) HashWikiDC() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+16+16
+func (pa *ProductAuction) hashWikiIDDistributionCenterIDforID() (hash [32]byte) {
+	var buf = make([]byte, 72) // 8+32+32
 	syllab.SetUInt64(buf, 0, productAuctionStructureID)
 	copy(buf[8:], pa.WikiID[:])
-	copy(buf[24:], pa.DistributionCenterID[:])
+	copy(buf[40:], pa.DistributionCenterID[:])
 	return sha512.Sum512_256(buf)
 }
 
 // IndexWikiGroup index pa.WikiGroup to retrieve record fast later.
 func (pa *ProductAuction) IndexWikiGroup() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: pa.HashWikiGroup(),
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   pa.hashWikiIDGroupIDforID(),
+		IndexValue: pa.ID,
 	}
-	copy(indexRequest.RecordID[:], pa.ID[:])
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashWikiGroup hash productAuctionStructureID + pa.WikiID + pa.GroupID
-func (pa *ProductAuction) HashWikiGroup() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+16+16
+func (pa *ProductAuction) hashWikiIDGroupIDforID() (hash [32]byte) {
+	var buf = make([]byte, 72) // 8+32+32
 	syllab.SetUInt64(buf, 0, productAuctionStructureID)
 	copy(buf[8:], pa.WikiID[:])
-	copy(buf[24:], pa.GroupID[:])
+	copy(buf[40:], pa.GroupID[:])
 	return sha512.Sum512_256(buf)
 }
 
@@ -256,7 +250,7 @@ func (pa *ProductAuction) HashWikiGroup() (hash [32]byte) {
 	-- Syllab Encoder & Decoder --
 */
 
-func (pa *ProductAuction) syllabDecoder(buf []byte) (err error) {
+func (pa *ProductAuction) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < pa.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -268,23 +262,26 @@ func (pa *ProductAuction) syllabDecoder(buf []byte) (err error) {
 	pa.WriteTime = syllab.GetInt64(buf, 48)
 	copy(pa.OwnerAppID[:], buf[56:])
 
-	copy(pa.AppInstanceID[:], buf[72:])
-	copy(pa.UserConnectionID[:], buf[88:])
-	copy(pa.OrgID[:], buf[104:])
-	copy(pa.ID[:], buf[120:])
-	copy(pa.WikiID[:], buf[136:])
-	pa.Currency = syllab.GetUInt16(buf, 152)
-	pa.SuggestPrice = syllab.GetUInt64(buf, 154)
-	pa.DiscountPerMyriad = syllab.GetUInt16(buf, 162)
-	pa.DistributionCenterCommission = syllab.GetUInt16(buf, 164)
-	pa.SellerCommission = syllab.GetUInt16(buf, 166)
-	pa.PayablePrice = syllab.GetUInt64(buf, 168)
-	copy(pa.DistributionCenterID[:], buf[176:])
-	pa.MinNumBuy = syllab.GetUInt64(buf, 192)
-	pa.StockNumber = syllab.GetUInt64(buf, 200)
-	copy(pa.GroupID[:], buf[208:])
-	pa.LiveUntil = syllab.GetInt64(buf, 224)
-	pa.Status = ProductAuctionStatus(syllab.GetUInt8(buf, 232))
+	copy(pa.AppInstanceID[:], buf[88:])
+	copy(pa.UserConnectionID[:], buf[120:])
+	copy(pa.OrgID[:], buf[152:])
+	copy(pa.ID[:], buf[184:])
+	copy(pa.WikiID[:], buf[216:])
+
+	pa.Currency = syllab.GetUInt16(buf, 248)
+	pa.SuggestPrice = syllab.GetUInt64(buf, 250)
+	pa.DiscountPerMyriad = syllab.GetUInt16(buf, 258)
+	pa.DistributionCenterCommission = syllab.GetUInt16(buf, 260)
+	pa.SellerCommission = syllab.GetUInt16(buf, 262)
+	pa.PayablePrice = syllab.GetUInt64(buf, 264)
+
+	copy(pa.DistributionCenterID[:], buf[272:])
+	pa.MinNumBuy = syllab.GetUInt64(buf, 304)
+	pa.StockNumber = syllab.GetUInt64(buf, 312)
+	copy(pa.GroupID[:], buf[320:])
+	pa.LiveUntil = syllab.GetInt64(buf, 352)
+	pa.Type = syllab.GetUInt8(buf, 360)
+	pa.Status = ProductAuctionStatus(syllab.GetUInt8(buf, 361))
 	return
 }
 
@@ -297,28 +294,31 @@ func (pa *ProductAuction) syllabEncoder() (buf []byte) {
 	syllab.SetInt64(buf, 48, pa.WriteTime)
 	copy(buf[56:], pa.OwnerAppID[:])
 
-	copy(buf[72:], pa.AppInstanceID[:])
-	copy(buf[88:], pa.UserConnectionID[:])
-	copy(buf[104:], pa.OrgID[:])
-	copy(buf[120:], pa.ID[:])
-	copy(buf[136:], pa.WikiID[:])
-	syllab.SetUInt16(buf, 152, pa.Currency)
-	syllab.SetUInt64(buf, 154, pa.SuggestPrice)
-	syllab.SetUInt16(buf, 162, pa.DiscountPerMyriad)
-	syllab.SetUInt16(buf, 164, pa.DistributionCenterCommission)
-	syllab.SetUInt16(buf, 166, pa.SellerCommission)
-	syllab.SetUInt64(buf, 168, pa.PayablePrice)
-	copy(buf[176:], pa.DistributionCenterID[:])
-	syllab.SetUInt64(buf, 192, pa.MinNumBuy)
-	syllab.SetUInt64(buf, 200, pa.StockNumber)
-	copy(buf[208:], pa.GroupID[:])
-	syllab.SetInt64(buf, 224, pa.LiveUntil)
-	syllab.SetUInt8(buf, 232, uint8(pa.Status))
+	copy(buf[88:], pa.AppInstanceID[:])
+	copy(buf[120:], pa.UserConnectionID[:])
+	copy(buf[152:], pa.OrgID[:])
+	copy(buf[184:], pa.ID[:])
+	copy(buf[216:], pa.WikiID[:])
+
+	syllab.SetUInt16(buf, 248, pa.Currency)
+	syllab.SetUInt64(buf, 250, pa.SuggestPrice)
+	syllab.SetUInt16(buf, 258, pa.DiscountPerMyriad)
+	syllab.SetUInt16(buf, 260, pa.DistributionCenterCommission)
+	syllab.SetUInt16(buf, 262, pa.SellerCommission)
+	syllab.SetUInt64(buf, 264, pa.PayablePrice)
+
+	copy(buf[272:], pa.DistributionCenterID[:])
+	syllab.SetUInt64(buf, 304, pa.MinNumBuy)
+	syllab.SetUInt64(buf, 312, pa.StockNumber)
+	copy(buf[320:], pa.GroupID[:])
+	syllab.SetInt64(buf, 352, pa.LiveUntil)
+	syllab.SetUInt8(buf, 360, pa.Type)
+	syllab.SetUInt8(buf, 361, uint8(pa.Status))
 	return
 }
 
 func (pa *ProductAuction) syllabStackLen() (ln uint32) {
-	return 233 // fixed size data + variables data add&&len
+	return 362
 }
 
 func (pa *ProductAuction) syllabHeapLen() (ln uint32) {

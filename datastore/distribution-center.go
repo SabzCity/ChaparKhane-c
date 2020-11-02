@@ -6,10 +6,12 @@ import (
 	"crypto/sha512"
 
 	etime "../libgo/earth-time"
+	er "../libgo/error"
 	"../libgo/ganjine"
 	gsdk "../libgo/ganjine-sdk"
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
+	"../libgo/log"
 	"../libgo/syllab"
 )
 
@@ -27,7 +29,7 @@ var distributionCenterStructure = ganjine.DataStructure{
 	Structure:         DistributionCenter{},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "DistributionCenter",
+		lang.EnglishLanguage: "Distribution Center",
 	},
 	Description: map[lang.Language]string{
 		lang.EnglishLanguage: "store not just warehouses but any DC type like stores that do many more things like package multi product to send!",
@@ -44,25 +46,25 @@ type DistributionCenter struct {
 	RecordStructureID uint64
 	RecordSize        uint64
 	WriteTime         int64
-	OwnerAppID        [16]byte
+	OwnerAppID        [32]byte
 
 	/* Unique data */
-	AppInstanceID    [16]byte // Store to remember which app instance set||chanaged this record!
-	UserConnectionID [16]byte // Store to remember which user connection set||chanaged this record!
-	ID               [16]byte `ganjine:"Immutable,Unique" ganjine-index:"Name,OrgID"`
-	Name             string
-	OrgID            [16]byte `ganjine:"Immutable"`
+	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
+	UserConnectionID [32]byte // Store to remember which user connection set||chanaged this record!
+	ID               [32]byte `ganjine:"Unique" hash-index:"RecordID"`
+	Name             string   `hash-index:"ID"`
+	OrgID            [32]byte `hash-index:"ID"`
 	Type             uint8    // Private, Public,
-	ThingID          [16]byte `ganjine:"Immutable"` // To get more data like map of DC, ...
-	CoordinateID     [16]byte `ganjine:"Immutable"`
+	ThingID          [32]byte // To get more data like map of DC, ...
+	CoordinateID     [32]byte `hash-index:"ID"`
 }
 
 // Set method set some data and write entire DistributionCenter record!
-func (dc *DistributionCenter) Set() (err error) {
+func (dc *DistributionCenter) Set() (err *er.Error) {
 	dc.RecordStructureID = distributionCenterStructureID
 	dc.RecordSize = dc.syllabLen()
 	dc.WriteTime = etime.Now()
-	dc.OwnerAppID = server.Manifest.AppID
+	dc.OwnerAppID = server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -80,19 +82,19 @@ func (dc *DistributionCenter) Set() (err error) {
 }
 
 // GetByRecordID method read all existing record data by given RecordID!
-func (dc *DistributionCenter) GetByRecordID() (err error) {
+func (dc *DistributionCenter) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
 		RecordID: dc.RecordID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
 	if err != nil {
-		return err
+		return
 	}
 
 	err = dc.syllabDecoder(res.Record)
 	if err != nil {
-		return err
+		return
 	}
 
 	if dc.RecordStructureID != distributionCenterStructureID {
@@ -101,56 +103,46 @@ func (dc *DistributionCenter) GetByRecordID() (err error) {
 	return
 }
 
-// GetByID method find and read last version of record by given ID
-func (dc *DistributionCenter) GetByID() (err error) {
-	var indexReq = &gs.FindRecordsReq{
-		IndexHash: dc.HashID(),
-		Offset:    18446744073709551615,
-		Limit:     0,
+// GetLastByID method find and read last version of record by given ID
+func (dc *DistributionCenter) GetLastByID() (err *er.Error) {
+	var indexRequest = &gs.HashIndexGetValuesReq{
+		IndexKey: dc.hashIDforRecordID(),
+		Offset:   18446744073709551615,
+		Limit:    1,
 	}
-	var indexRes *gs.FindRecordsRes
-	indexRes, err = gsdk.FindRecords(cluster, indexReq)
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexRequest)
 	if err != nil {
-		return err
+		return
 	}
 
-	var ln = len(indexRes.RecordIDs)
-	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	ln--
-	for ; ln > 0; ln-- {
-		dc.RecordID = indexRes.RecordIDs[ln]
-		err = dc.GetByRecordID()
-		if err != ganjine.ErrGanjineMisMatchedStructureID {
-			return
-		}
+	dc.RecordID = indexRes.IndexValues[0]
+	err = dc.GetByRecordID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", distributionCenterStructureID)
 	}
-	return ganjine.ErrGanjineRecordNotFound
+	return
 }
 
-// GetByName method find and read last version of record by given Name
-func (dc *DistributionCenter) GetByName() (err error) {
-	var indexReq = &gs.FindRecordsReq{
-		IndexHash: dc.HashName(),
-		Offset:    18446744073709551615,
-		Limit:     0,
+// GetLastByName method find and read last version of record by given Name
+func (dc *DistributionCenter) GetLastByName() (err *er.Error) {
+	var indexRequest = &gs.HashIndexGetValuesReq{
+		IndexKey: dc.hashNameforID(),
+		Offset:   18446744073709551615,
+		Limit:    1,
 	}
-	var indexRes *gs.FindRecordsRes
-	indexRes, err = gsdk.FindRecords(cluster, indexReq)
+	var indexRes *gs.HashIndexGetValuesRes
+	indexRes, err = gsdk.HashIndexGetValues(cluster, indexRequest)
 	if err != nil {
-		return err
+		return
 	}
 
-	var ln = len(indexRes.RecordIDs)
-	// TODO::: Need to handle this here?? if collision ocurred and last record ID is not our purpose??
-	ln--
-	for ; ln > 0; ln-- {
-		dc.RecordID = indexRes.RecordIDs[ln]
-		err = dc.GetByRecordID()
-		if err != ganjine.ErrGanjineMisMatchedStructureID {
-			return
-		}
+	dc.ID = indexRes.IndexValues[0]
+	err = dc.GetLastByID()
+	if err == ganjine.ErrGanjineMisMatchedStructureID {
+		log.Warn("Platform collapsed!! HASH Collision Occurred on", distributionCenterStructureID)
 	}
-	return ganjine.ErrGanjineRecordNotFound
+	return
 }
 
 /*
@@ -160,20 +152,19 @@ func (dc *DistributionCenter) GetByName() (err error) {
 // IndexID index Unique-Field(ID) chain to retrieve last record version fast later.
 // Call in each update to the exiting record!
 func (dc *DistributionCenter) IndexID() {
-	var idIndex = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: dc.HashID(),
-		RecordID:  dc.RecordID,
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   dc.hashIDforRecordID(),
+		IndexValue: dc.RecordID,
 	}
-	var err = gsdk.SetIndexHash(cluster, &idIndex)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashID hash distributionCenterStructureID + ID
-func (dc *DistributionCenter) HashID() (hash [32]byte) {
-	var buf = make([]byte, 24) // 8+16
+func (dc *DistributionCenter) hashIDforRecordID() (hash [32]byte) {
+	var buf = make([]byte, 40) // 8+32
 	syllab.SetUInt64(buf, 0, distributionCenterStructureID)
 	copy(buf[8:], dc.ID[:])
 	return sha512.Sum512_256(buf)
@@ -186,42 +177,40 @@ func (dc *DistributionCenter) HashID() (hash [32]byte) {
 // IndexName index to retrieve all Unique-Field(ID) owned by given Name
 // Don't call in update to an exiting record!
 func (dc *DistributionCenter) IndexName() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: dc.HashName(),
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   dc.hashNameforID(),
+		IndexValue: dc.ID,
 	}
-	copy(indexRequest.RecordID[:], dc.ID[:])
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashName hash distributionCenterStructureID + Name
-func (dc *DistributionCenter) HashName() (hash [32]byte) {
+func (dc *DistributionCenter) hashNameforID() (hash [32]byte) {
 	var buf = make([]byte, 8+len(dc.Name))
 	syllab.SetUInt64(buf, 0, distributionCenterStructureID)
 	copy(buf[8:], dc.Name)
 	return sha512.Sum512_256(buf)
 }
 
-// IndexOrg index to retrieve all Unique-Field(ID) owned by given OrgID
+// IndexOrgID index to retrieve all Unique-Field(ID) owned by given OrgID
 // Don't call in update to an exiting record!
-func (dc *DistributionCenter) IndexOrg() {
-	var indexRequest = gs.SetIndexHashReq{
-		Type:      gs.RequestTypeBroadcast,
-		IndexHash: dc.HashName(),
+func (dc *DistributionCenter) IndexOrgID() {
+	var indexRequest = gs.HashIndexSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   dc.hashOrgIDforID(),
+		IndexValue: dc.ID,
 	}
-	copy(indexRequest.RecordID[:], dc.ID[:])
-	var err = gsdk.SetIndexHash(cluster, &indexRequest)
+	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-// HashOrgID hash distributionCenterStructureID + OrgID
-func (dc *DistributionCenter) HashOrgID() (hash [32]byte) {
-	var buf = make([]byte, 24) // 8+16
+func (dc *DistributionCenter) hashOrgIDforID() (hash [32]byte) {
+	var buf = make([]byte, 40) // 8+32
 	syllab.SetUInt64(buf, 0, distributionCenterStructureID)
 	copy(buf[8:], dc.OrgID[:])
 	return sha512.Sum512_256(buf)
@@ -231,9 +220,7 @@ func (dc *DistributionCenter) HashOrgID() (hash [32]byte) {
 	-- Syllab Encoder & Decoder --
 */
 
-func (dc *DistributionCenter) syllabDecoder(buf []byte) (err error) {
-	var add, ln uint32
-
+func (dc *DistributionCenter) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < dc.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -245,23 +232,20 @@ func (dc *DistributionCenter) syllabDecoder(buf []byte) (err error) {
 	dc.WriteTime = syllab.GetInt64(buf, 48)
 	copy(dc.OwnerAppID[:], buf[56:])
 
-	copy(dc.AppInstanceID[:], buf[72:])
-	copy(dc.UserConnectionID[:], buf[88:])
-	copy(dc.ID[:], buf[104:])
-	add = syllab.GetUInt32(buf, 120)
-	ln = syllab.GetUInt32(buf, 124)
-	dc.Name = string(buf[add : add+ln])
-	copy(dc.OrgID[:], buf[128:])
-	dc.Type = syllab.GetUInt8(buf, 144)
-	copy(dc.ThingID[:], buf[145:])
-	copy(dc.CoordinateID[:], buf[161:])
+	copy(dc.AppInstanceID[:], buf[88:])
+	copy(dc.UserConnectionID[:], buf[120:])
+	copy(dc.ID[:], buf[152:])
+	dc.Name = syllab.UnsafeGetString(buf, 184)
+	copy(dc.OrgID[:], buf[192:])
+	dc.Type = syllab.GetUInt8(buf, 224)
+	copy(dc.ThingID[:], buf[225:])
+	copy(dc.CoordinateID[:], buf[257:])
 	return
 }
 
 func (dc *DistributionCenter) syllabEncoder() (buf []byte) {
 	buf = make([]byte, dc.syllabLen())
 	var hsi uint32 = dc.syllabStackLen() // Heap start index || Stack size!
-	var ln uint32                        // len of strings, slices, maps, ...
 
 	// copy(buf[0:], dc.RecordID[:])
 	syllab.SetUInt64(buf, 32, dc.RecordStructureID)
@@ -269,23 +253,19 @@ func (dc *DistributionCenter) syllabEncoder() (buf []byte) {
 	syllab.SetInt64(buf, 48, dc.WriteTime)
 	copy(buf[56:], dc.OwnerAppID[:])
 
-	copy(buf[72:], dc.AppInstanceID[:])
-	copy(buf[88:], dc.UserConnectionID[:])
-	copy(buf[104:], dc.ID[:])
-	ln = uint32(len(dc.Name))
-	syllab.SetUInt32(buf, 120, hsi)
-	syllab.SetUInt32(buf, 124, ln)
-	copy(buf[hsi:], dc.Name)
-	hsi += ln
-	copy(buf[128:], dc.OrgID[:])
-	syllab.SetUInt8(buf, 144, dc.Type)
-	copy(buf[145:], dc.ThingID[:])
-	copy(buf[161:], dc.CoordinateID[:])
+	copy(buf[88:], dc.AppInstanceID[:])
+	copy(buf[120:], dc.UserConnectionID[:])
+	copy(buf[152:], dc.ID[:])
+	syllab.SetString(buf, dc.Name, 184, hsi)
+	copy(buf[192:], dc.OrgID[:])
+	syllab.SetUInt8(buf, 224, dc.Type)
+	copy(buf[225:], dc.ThingID[:])
+	copy(buf[257:], dc.CoordinateID[:])
 	return
 }
 
 func (dc *DistributionCenter) syllabStackLen() (ln uint32) {
-	return 177 // fixed size data + variables data add&&len
+	return 289
 }
 
 func (dc *DistributionCenter) syllabHeapLen() (ln uint32) {
