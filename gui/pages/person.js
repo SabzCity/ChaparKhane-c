@@ -3,9 +3,11 @@
 import '../libjs/time.js'
 import '../../sdk-js/get-person-number.js'
 
-Application.Pages["my"] = {
-    ID: "my",
-    Conditions: {},
+const personPage = {
+    ID: "person",
+    Conditions: {
+        id: "",
+    },
     State: "",
     Robots: "all",
     Info: {
@@ -17,22 +19,23 @@ Application.Pages["my"] = {
         Tags: ["LocaleText[5]"]
     },
     Icon: "person",
-    Related: ["aboutme"], // "groups", "sessions", "settings", "security"
+    Related: [], // "groups", "sessions", "settings", "security"
     HTML: () => ``,
     CSS: '',
     Templates: {},
 }
+pages.poolByID[personPage.ID] = personPage
 
-Application.Pages["my"].ConnectedCallback = function () {
+personPage.ConnectedCallback = function () {
     window.document.body.innerHTML = this.HTML()
 
-    myPageGetPhoneNumber()
+    personPage.GetPhoneNumber()
 }
 
-Application.Pages["my"].DisconnectedCallback = function () {
+personPage.DisconnectedCallback = function () {
 }
 
-async function myPageGetPhoneNumber() {
+personPage.GetPhoneNumber = async function() {
     const userNumberElement = document.getElementById("userNumber")
     const userNumberWriteTimeElement = document.getElementById("userNumberWriteTime")
     const userNumberStatusElement = document.getElementById("userNumberStatus")
@@ -45,7 +48,6 @@ async function myPageGetPhoneNumber() {
 
         users.active.UserNumber = res.Number
     } catch (err) {
-        // TODO::: toast related dialog to warn user about server 500 situation!
-        // console.log(err)
+        errors.HandleError(err)
     }
 }

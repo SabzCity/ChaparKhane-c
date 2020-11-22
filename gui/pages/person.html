@@ -3,14 +3,14 @@
 <header class="app-bar">
     <span class="left">
         ${widgets["hamburger-menu"].ConnectedCallback()}
-        <a href="/"><img alt="SabzCity logo" src="/images/app-icon-48x48.png" /></a>
+        <a href="/"><img alt="SabzCity logo" src="/app-icon-48x48.png" /></a>
     </span>
 
     <span class="center"></span>
 
     <span class="right">
         ${widgets["user-menu"].ConnectedCallback()}
-        ${widgets["service-menu"].ConnectedCallback()}
+        ${serviceMenuWidget.ConnectedCallback()}
     </span>
 </header>
 

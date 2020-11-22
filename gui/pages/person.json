@@ -1,9 +1,9 @@
 {
     "en": [
-        "User Services",
-        "My", 
+        "Person Details",
+        "Person", 
         "", 
-        "Glance at your account",
+        "Glance at your person account details",
         "", 
         "Person Number",
         "Number",
@@ -23,12 +23,12 @@
         ""
     ],
     "fa": [
-        "خدمات کاربری",
-        "پنل کاربری",
+        "مشخصات شخص",
+        "شخص",
         "",
-        "نگاه کلی به حساب کاربری",
+        "نگاه کلی به حساب کاربری شخص",
         "", 
-        "شماره کاربر",
+        "شماره شخص",
         "شماره",
         "آخرین تغییر",
         "وضعیت",

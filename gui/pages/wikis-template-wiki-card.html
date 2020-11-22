@@ -1,0 +1,13 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<article>
+    <a href="/wiki?id=${wiki.ID}">
+        <header>
+            <h1>${wiki.Title}</h1>
+        </header>
+
+        <label class="typography--caption" for="wikiURI">${LocaleText[6]}</label>
+        <p id="wikiURI">${wiki.URI}</p>
+        <img src="${wiki.Pictures[0] || '/No_image_available.svg'}" alt="${LocaleText[7]}">
+    </a>
+</article>

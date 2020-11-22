@@ -1,0 +1,131 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+
+<header class="app-bar">
+    <span class="left">
+        ${widgets["hamburger-menu"].ConnectedCallback()}
+        <a href="/"><img alt="SabzCity logo" src="/app-icon-48x48.png" /></a>
+    </span>
+
+    <span class="center"></span>
+
+    <span class="right">
+        ${widgets["user-menu"].ConnectedCallback()}
+        ${serviceMenuWidget.ConnectedCallback()}
+    </span>
+</header>
+
+<main>
+    <header role="toolbar">
+        <button id="newOrg" class="icon" title="${LocaleText[6]}" onclick="orgPage.EnableNew()">
+            <i class="icons-font">business</i>
+        </button class="icon">
+        <button id="editOrg" class="icon" title="${LocaleText[7]}" onclick="orgPage.EnableEdit()">
+            <i class="icons-font">edit</i>
+        </button>
+        <button id="saveChanges" class="icon" title="${LocaleText[8]}" disabled onclick="orgPage.SaveEdit()">
+            <i class="icons-font">save</i>
+        </button>
+        <button id="discardChanges" class="icon" title="${LocaleText[9]}" disabled onclick="orgPage.DiscardChanges()">
+            <i class="icons-font">clear</i>
+        </button>
+    </header>
+
+    <dialog type="modal" id="termDialog">
+        <header>${LocaleText[18]}</header>
+        <div>
+            <p>${LocaleText[19]}</p>
+        </div>
+        <footer>
+            <button type="button" onclick="orgPage.ToggleTermDialog()">
+                <label>${LocaleText[20]}</label>
+            </button>
+        </footer>
+    </dialog>
+
+    <article class="layout-grid">
+        <header class="span-12">
+            <label class="typography--caption" for="orgNameInput">${LocaleText[0]}</label>
+            <h1 id="orgNameValue">${org.Name}</h1>
+            <input type="text" id="orgNameInput" autocomplete="off" value="${org.Name}" hidden />
+        </header>
+
+        <div class="span-3">
+            <div class="typography--caption">${LocaleText[10]}</div>
+            <div id="ordIDValue">${org.ID}</div>
+        </div>
+
+        <div class="span-3">
+            <label class="typography--caption" for="orgDomainInput">${LocaleText[11]}</label>
+            <a id="orgDomainValue" href="https://${org.Domain}/">${org.Domain}</a>
+            <input type="domain" id="orgDomainInput" autocomplete="off" value="${org.Domain}" hidden />
+        </div>
+
+        <div class="span-3">
+            <label class="typography--caption">${LocaleText[12]}</label>
+            <div id="orgFinancialCreditAmountValue">${currency.String(org.FinancialCreditAmount)}</div>
+            <input type="number" id="orgFinancialCreditAmountInput" autocomplete="off" value="${org.FinancialCreditAmount}" hidden />
+        </div>
+
+        <div class="span-3">
+            <label class="typography--caption" for="orgThingIDInput">${LocaleText[21]}</label>
+            <div id="orgThingIDValue">${org.ThingID}</div>
+            <input type="text" id="orgThingIDInput" autocomplete="off" value="${org.ThingID}" hidden />
+        </div>
+
+        <div class="span-3">
+            <label class="typography--caption" for="orgCoordinateIDInput">${LocaleText[22]}</label>
+            <div id="orgCoordinateIDValue">${org.CoordinateID}</div>
+            <input type="text" id="orgCoordinateIDInput" autocomplete="off" value="${org.CoordinateID}" hidden />
+        </div>
+
+        <div class="span-3">
+            <label class="typography--caption" for="orgServicesTypeSelect">${LocaleText[23]}</label>
+            <div id="orgShortServicesTypeValue">${OrganizationAuthenticationType.GetShortDetailByID(org.ServicesType)}</div>
+            <div id="orgLongServicesTypeValue">${OrganizationAuthenticationType.GetLongDetailByID(org.ServicesType)}</div>
+            <select id="orgServicesTypeSelect" value="${org.ServicesType}" hidden>
+                <option value="0" disabled>${OrganizationAuthenticationType.GetShortDetailByID(0)}</option>
+                <option value="1">${OrganizationAuthenticationType.GetShortDetailByID(1)}</option>
+                <option value="2">${OrganizationAuthenticationType.GetShortDetailByID(2)}</option>
+            </select>
+        </div>
+
+        <div class="span-3">
+            <label class="typography--caption" for="orgStatusSelect">${LocaleText[13]}</label>
+            <div id="orgShortStatusValue">${OrganizationAuthenticationStatus.GetShortDetailByID(org.Status)}</div>
+            <div id="orgLongStatusValue">${OrganizationAuthenticationStatus.GetLongDetailByID(org.Status)}</div>
+            <select id="orgStatusSelect" value="${org.Status}" hidden>
+                <option value="0" disabled>${OrganizationAuthenticationStatus.GetShortDetailByID(0)}</option>
+                <option value="1">${OrganizationAuthenticationStatus.GetShortDetailByID(1)}</option>
+                <option value="2">${OrganizationAuthenticationStatus.GetShortDetailByID(2)}</option>
+                <option value="3">${OrganizationAuthenticationStatus.GetShortDetailByID(3)}</option>
+                <option value="4">${OrganizationAuthenticationStatus.GetShortDetailByID(4)}</option>
+                <option value="5">${OrganizationAuthenticationStatus.GetShortDetailByID(5)}</option>
+                <option value="6">${OrganizationAuthenticationStatus.GetShortDetailByID(6)}</option>
+            </select>
+        </div>
+
+        <div id="orgLeaderPersonID" class="span-3" hidden>
+            <label class="typography--caption" for="orgLeaderPersonIDInput">${LocaleText[24]}</label>
+            <input type="text" id="orgLeaderPersonIDInput" autocomplete="off" />
+        </div>
+    </article>
+
+    <article class="layout-grid">
+        <header class="span-12">
+            <h1>${LocaleText[14]}</h1>
+        </header>
+
+        <a href="/store?org=${org.ID}">${LocaleText[15]}</a>
+        <a href="/blog?org=${org.ID}">${LocaleText[16]}</a>
+        <a href="/wikis?org=${org.ID}">${LocaleText[26]}</a>
+        <a href="/product-auctions?org=${org.ID}">${LocaleText[27]}</a>
+    </article>
+
+    <article class="layout-grid">
+        <header class="span-12">
+            <h1>${LocaleText[17]}</h1>
+        </header>
+        <!-- TODO::: Staffs -->
+    </article>
+</main>
