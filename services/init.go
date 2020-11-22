@@ -17,6 +17,8 @@ var (
 
 	smsProvider       asanak.Asanak
 	smsOTPSecurityKey = make([]byte, 32)
+
+	adminUserID = [32]byte{128}
 )
 
 // Server store address location to server use by other part of app!
@@ -40,14 +42,14 @@ func Init(s *achaemenid.Server) {
 		log.Fatal(err)
 	}
 
-	// Authentication
+	// PersonAuthentication
 	s.Services.RegisterService(&registerNewPersonService)
 	s.Services.RegisterService(&changePersonPasswordService)
 	s.Services.RegisterService(&blockPersonService)
 	s.Services.RegisterService(&recoverPersonAccountService)
 	s.Services.RegisterService(&revokePersonPublicKeyService)
 	s.Services.RegisterService(&unblockPersonService)
-	// s.Services.RegisterService(&)
+	s.Services.RegisterService(&getPersonStatusService)
 
 	// PersonNumber
 	s.Services.RegisterService(&registerPersonNumberService)
@@ -69,21 +71,39 @@ func Init(s *achaemenid.Server) {
 	s.Services.RegisterService(&approvePersonPublicKeyService)
 	s.Services.RegisterService(&authenticatePersonPublicKeyService)
 
-	//
+	// OrganizationAuthentication
+	s.Services.RegisterService(&getOrganizationByDomainService)
+	s.Services.RegisterService(&getOrganizationByIDService)
+	s.Services.RegisterService(&getOrganizationByNameService)
+	s.Services.RegisterService(&registerNewOrganizationService)
+	s.Services.RegisterService(&updateOrganizationService)
+	s.Services.RegisterService(&getLastOrganizationsIDService)
 	// s.Services.RegisterService(&blockOrgService)
+	// s.Services.RegisterService(&)
+
+	// Wiki
+	s.Services.RegisterService(&registerNewWikiService)
+	s.Services.RegisterService(&getWikiByIDService)
+	s.Services.RegisterService(&findWikiByTitleService)
+	s.Services.RegisterService(&findWikiByURIService)
+	s.Services.RegisterService(&findWikiByOrgIDService)
+	s.Services.RegisterService(&registerWikiNewLanguageService)
+	s.Services.RegisterService(&updateWikiService)
+	s.Services.RegisterService(&getWikiLanguagesService)
+
+	// ProductAuction
+	s.Services.RegisterService(&registerDefaultProductAuctionService)
+	s.Services.RegisterService(&registerCustomProductAuctionService)
+	s.Services.RegisterService(&updateProductAuctionService)
+	s.Services.RegisterService(&getProductAuctionService)
+	s.Services.RegisterService(&findProductAuctionByDistributionCenterIDService)
+	s.Services.RegisterService(&findProductAuctionByGroupIDService)
+	s.Services.RegisterService(&findProductAuctionByOrgIDService)
+	s.Services.RegisterService(&findProductAuctionByWikiIDDistributionCenterIDService)
+	s.Services.RegisterService(&findProductAuctionByWikiIDGroupIDService)
+	s.Services.RegisterService(&findProductAuctionByWikiIDService)
 
 	// ForeignDetail
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-
-	//
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-
-	//
 	// s.Services.RegisterService(&)
 	// s.Services.RegisterService(&)
 	// s.Services.RegisterService(&)
