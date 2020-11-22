@@ -12,6 +12,7 @@ import (
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
 	"../libgo/log"
+	"../libgo/price"
 	"../libgo/syllab"
 )
 
@@ -45,19 +46,19 @@ type FinancialTransaction struct {
 	RecordID          [32]byte
 	RecordStructureID uint64
 	RecordSize        uint64
-	WriteTime         int64
+	WriteTime         etime.Time
 	OwnerAppID        [32]byte
 
 	/* Unique data */
-	AppInstanceID         [32]byte // Store to remember which app instance set||chanaged this record!
-	UserConnectionID      [32]byte // Store to remember which user connection set||chanaged this record!
-	UserID                [32]byte `ganjine:"Unique" hash-index:"RecordID[daily,pair,Currency]"`
-	Currency              uint16   `ganjine:"Unique" hash-index:"UserID"`
-	ReferenceID           [32]byte // ProductID || UserID Transferred || ForeignExchangeID || JusticeID || ...
-	ReferenceType         uint8    // 0:Product 1:Transfer 2:Transfer-bank 3:Block 4:donate
-	PreviousTransactionID [32]byte // Last RecordID of same user with same currency
-	Amount                int64    // Some number part base on currency is Decimal part e.g. 8099 >> 80.99$
-	Balance               uint64   // Some number part base on currency is Decimal part e.g. 8099 >> 80.99$
+	AppInstanceID         [32]byte       // Store to remember which app instance set||chanaged this record!
+	UserConnectionID      [32]byte       // Store to remember which user connection set||chanaged this record!
+	UserID                [32]byte       `ganjine:"Unique" hash-index:"RecordID[daily,pair,Currency]"`
+	Currency              price.Currency `ganjine:"Unique" hash-index:"UserID"`
+	ReferenceID           [32]byte       // ProductID || UserID Transferred || ForeignExchangeID || JusticeID || ...
+	ReferenceType         uint8          // 0:Product 1:Transfer 2:Transfer-bank 3:Block 4:donate
+	PreviousTransactionID [32]byte       // Last RecordID of same user with same currency
+	Amount                price.Amount
+	Balance               price.Amount
 }
 
 // Set method set some data and write entire FinancialTransaction record!
@@ -85,7 +86,8 @@ func (ft *FinancialTransaction) Set() (err *er.Error) {
 // GetByRecordID method read all existing record data by given RecordID!
 func (ft *FinancialTransaction) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
-		RecordID: ft.RecordID,
+		RecordID:          ft.RecordID,
+		RecordStructureID: financialTransactionStructureID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
@@ -99,7 +101,7 @@ func (ft *FinancialTransaction) GetByRecordID() (err *er.Error) {
 	}
 
 	if ft.RecordStructureID != financialTransactionStructureID {
-		err = ganjine.ErrGanjineMisMatchedStructureID
+		err = ganjine.ErrMisMatchedStructureID
 	}
 	return
 }
@@ -127,7 +129,7 @@ func (ft *FinancialTransaction) GetLastTransactionByUserCurrency() (err *er.Erro
 
 	ft.RecordID = indexRes.IndexValues[0]
 	err = ft.GetByRecordID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", financialTransactionStructureID)
 	}
 	return
@@ -154,8 +156,8 @@ func (ft *FinancialTransaction) hashUserIDCurrencyforRecordIDDaily() (hash [32]b
 	var buf = make([]byte, 50) // 8+32+2+8
 	syllab.SetUInt64(buf, 0, financialTransactionStructureID)
 	copy(buf[8:], ft.UserID[:])
-	syllab.SetUInt16(buf, 40, ft.Currency)
-	syllab.SetInt64(buf, 42, etime.RoundToDay(ft.WriteTime))
+	syllab.SetUInt16(buf, 40, uint16(ft.Currency))
+	syllab.SetInt64(buf, 42, ft.WriteTime.RoundToDay())
 	return sha512.Sum512_256(buf)
 }
 
@@ -176,7 +178,7 @@ func (ft *FinancialTransaction) ListCurrencyforUserID() {
 		Type:     gs.RequestTypeBroadcast,
 		IndexKey: ft.hashUserIDforCurrency(),
 	}
-	syllab.SetUInt16(indexRequest.IndexValue[:], 0, ft.Currency)
+	syllab.SetUInt16(indexRequest.IndexValue[:], 0, uint16(ft.Currency))
 	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
@@ -205,18 +207,18 @@ func (ft *FinancialTransaction) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(ft.RecordID[:], buf[0:])
 	ft.RecordStructureID = syllab.GetUInt64(buf, 32)
 	ft.RecordSize = syllab.GetUInt64(buf, 40)
-	ft.WriteTime = syllab.GetInt64(buf, 48)
+	ft.WriteTime = etime.Time(syllab.GetInt64(buf, 48))
 	copy(ft.OwnerAppID[:], buf[56:])
 
 	copy(ft.AppInstanceID[:], buf[88:])
 	copy(ft.UserConnectionID[:], buf[120:])
 	copy(ft.UserID[:], buf[152:])
-	ft.Currency = syllab.GetUInt16(buf, 184)
+	ft.Currency = price.Currency(syllab.GetUInt16(buf, 184))
 	copy(ft.ReferenceID[:], buf[186:])
 	ft.ReferenceType = syllab.GetUInt8(buf, 218)
 	copy(ft.PreviousTransactionID[:], buf[219:])
-	ft.Amount = syllab.GetInt64(buf, 251)
-	ft.Balance = syllab.GetUInt64(buf, 259)
+	ft.Amount = price.Amount(syllab.GetInt64(buf, 251))
+	ft.Balance = price.Amount(syllab.GetUInt64(buf, 259))
 	return
 }
 
@@ -226,18 +228,18 @@ func (ft *FinancialTransaction) syllabEncoder() (buf []byte) {
 	// copy(buf[0:], ft.RecordID[:])
 	syllab.SetUInt64(buf, 32, ft.RecordStructureID)
 	syllab.SetUInt64(buf, 40, ft.RecordSize)
-	syllab.SetInt64(buf, 48, ft.WriteTime)
+	syllab.SetInt64(buf, 48, int64(ft.WriteTime))
 	copy(buf[56:], ft.OwnerAppID[:])
 
 	copy(buf[88:], ft.AppInstanceID[:])
 	copy(buf[120:], ft.UserConnectionID[:])
 	copy(buf[152:], ft.UserID[:])
-	syllab.SetUInt16(buf, 184, ft.Currency)
+	syllab.SetUInt16(buf, 184, uint16(ft.Currency))
 	copy(buf[186:], ft.ReferenceID[:])
 	syllab.SetUInt8(buf, 218, ft.ReferenceType)
 	copy(buf[219:], ft.PreviousTransactionID[:])
-	syllab.SetInt64(buf, 251, ft.Amount)
-	syllab.SetUInt64(buf, 259, ft.Balance)
+	syllab.SetInt64(buf, 251, int64(ft.Amount))
+	syllab.SetInt64(buf, 259, int64(ft.Balance))
 	return
 }
 

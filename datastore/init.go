@@ -18,4 +18,17 @@ var (
 func Init(s *achaemenid.Server, c *ganjine.Cluster) {
 	server = s
 	cluster = c
+
+	c.DataStructures.RegisterDataStructure(&financialTransactionStructure)
+	c.DataStructures.RegisterDataStructure(&organizationAuthenticationStructure)
+	c.DataStructures.RegisterDataStructure(&personAuthenticationStructure)
+	c.DataStructures.RegisterDataStructure(&personNumberStructure)
+	c.DataStructures.RegisterDataStructure(&personPublicKeyStructure)
+	c.DataStructures.RegisterDataStructure(&productAuctionStructure)
+	c.DataStructures.RegisterDataStructure(&productStructure)
+	c.DataStructures.RegisterDataStructure(&userAppsConnectionStructure)
+	c.DataStructures.RegisterDataStructure(&userNameStructure)
+	c.DataStructures.RegisterDataStructure(&userPictureStructure)
+	c.DataStructures.RegisterDataStructure(&wikiStructure)
+	// c.DataStructures.RegisterDataStructure(&)
 }

@@ -45,7 +45,7 @@ type UserName struct {
 	RecordID          [32]byte
 	RecordStructureID uint64
 	RecordSize        uint64
-	WriteTime         int64
+	WriteTime         etime.Time
 	OwnerAppID        [32]byte
 
 	/* Unique data */
@@ -91,7 +91,8 @@ func (un *UserName) Set() (err *er.Error) {
 // GetByRecordID method read all existing record data by given RecordID!
 func (un *UserName) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
-		RecordID: un.RecordID,
+		RecordID:          un.RecordID,
+		RecordStructureID: userNameStructureID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
@@ -105,7 +106,7 @@ func (un *UserName) GetByRecordID() (err *er.Error) {
 	}
 
 	if un.RecordStructureID != userNameStructureID {
-		err = ganjine.ErrGanjineMisMatchedStructureID
+		err = ganjine.ErrMisMatchedStructureID
 	}
 	return
 }
@@ -125,7 +126,7 @@ func (un *UserName) GetLastByUserID() (err *er.Error) {
 
 	un.RecordID = indexRes.IndexValues[0]
 	err = un.GetByRecordID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", userNameStructureID)
 	}
 	return
@@ -146,7 +147,7 @@ func (un *UserName) GetLastByUserName() (err *er.Error) {
 
 	un.UserID = indexRes.IndexValues[0]
 	err = un.GetLastByUserID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", userNameStructureID)
 	}
 	return
@@ -215,7 +216,7 @@ func (un *UserName) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(un.RecordID[:], buf[0:])
 	un.RecordStructureID = syllab.GetUInt64(buf, 32)
 	un.RecordSize = syllab.GetUInt64(buf, 40)
-	un.WriteTime = syllab.GetInt64(buf, 48)
+	un.WriteTime = etime.Time(syllab.GetInt64(buf, 48))
 	copy(un.OwnerAppID[:], buf[56:])
 
 	copy(un.AppInstanceID[:], buf[88:])
@@ -233,7 +234,7 @@ func (un *UserName) syllabEncoder() (buf []byte) {
 	// copy(buf[0:], un.RecordID[:])
 	syllab.SetUInt64(buf, 32, un.RecordStructureID)
 	syllab.SetUInt64(buf, 40, un.RecordSize)
-	syllab.SetInt64(buf, 48, un.WriteTime)
+	syllab.SetInt64(buf, 48, int64(un.WriteTime))
 	copy(buf[56:], un.OwnerAppID[:])
 
 	copy(buf[88:], un.AppInstanceID[:])

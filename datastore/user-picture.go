@@ -46,7 +46,7 @@ type UserPicture struct {
 	RecordID          [32]byte
 	RecordStructureID uint64
 	RecordSize        uint64
-	WriteTime         int64
+	WriteTime         etime.Time
 	OwnerAppID        [32]byte
 
 	/* Unique data */
@@ -93,7 +93,8 @@ func (up *UserPicture) Set() (err *er.Error) {
 // GetByRecordID method read all existing record data by given RecordID!
 func (up *UserPicture) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
-		RecordID: up.RecordID,
+		RecordID:          up.RecordID,
+		RecordStructureID: userPictureStructureID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
@@ -107,7 +108,7 @@ func (up *UserPicture) GetByRecordID() (err *er.Error) {
 	}
 
 	if up.RecordStructureID != userPictureStructureID {
-		err = ganjine.ErrGanjineMisMatchedStructureID
+		err = ganjine.ErrMisMatchedStructureID
 	}
 	return
 }
@@ -127,7 +128,7 @@ func (up *UserPicture) GetLastByUserID() (err *er.Error) {
 
 	up.RecordID = indexRes.IndexValues[0]
 	err = up.GetByRecordID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", userPictureStructureID)
 	}
 	return
@@ -170,7 +171,7 @@ func (up *UserPicture) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(up.RecordID[:], buf[0:])
 	up.RecordStructureID = syllab.GetUInt64(buf, 32)
 	up.RecordSize = syllab.GetUInt64(buf, 40)
-	up.WriteTime = syllab.GetInt64(buf, 48)
+	up.WriteTime = etime.Time(syllab.GetInt64(buf, 48))
 	copy(up.OwnerAppID[:], buf[56:])
 
 	copy(up.AppInstanceID[:], buf[88:])
@@ -188,7 +189,7 @@ func (up *UserPicture) syllabEncoder() (buf []byte) {
 	// copy(buf[0:], up.RecordID[:])
 	syllab.SetUInt64(buf, 32, up.RecordStructureID)
 	syllab.SetUInt64(buf, 40, up.RecordSize)
-	syllab.SetInt64(buf, 48, up.WriteTime)
+	syllab.SetInt64(buf, 48, int64(up.WriteTime))
 	copy(buf[56:], up.OwnerAppID[:])
 
 	copy(buf[88:], up.AppInstanceID[:])

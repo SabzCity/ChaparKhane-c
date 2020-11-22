@@ -45,7 +45,7 @@ type PersonPublicKey struct {
 	RecordID          [32]byte
 	RecordStructureID uint64
 	RecordSize        uint64
-	WriteTime         int64
+	WriteTime         etime.Time
 	OwnerAppID        [32]byte
 
 	/* Unique data */
@@ -95,7 +95,8 @@ func (ppk *PersonPublicKey) Set() (err *er.Error) {
 // GetByRecordID method read all existing record data by given RecordID!
 func (ppk *PersonPublicKey) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
-		RecordID: ppk.RecordID,
+		RecordID:          ppk.RecordID,
+		RecordStructureID: personPublicKeyStructureID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
@@ -109,7 +110,7 @@ func (ppk *PersonPublicKey) GetByRecordID() (err *er.Error) {
 	}
 
 	if ppk.RecordStructureID != personPublicKeyStructureID {
-		err = ganjine.ErrGanjineMisMatchedStructureID
+		err = ganjine.ErrMisMatchedStructureID
 	}
 	return
 }
@@ -129,7 +130,7 @@ func (ppk *PersonPublicKey) GetLastByPublicKey() (err *er.Error) {
 
 	ppk.RecordID = indexRes.IndexValues[0]
 	err = ppk.GetByRecordID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", personPublicKeyStructureID)
 	}
 	return
@@ -246,7 +247,7 @@ func (ppk *PersonPublicKey) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(ppk.RecordID[:], buf[0:])
 	ppk.RecordStructureID = syllab.GetUInt64(buf, 32)
 	ppk.RecordSize = syllab.GetUInt64(buf, 40)
-	ppk.WriteTime = syllab.GetInt64(buf, 48)
+	ppk.WriteTime = etime.Time(syllab.GetInt64(buf, 48))
 	copy(ppk.OwnerAppID[:], buf[56:])
 
 	copy(ppk.AppInstanceID[:], buf[88:])
@@ -264,7 +265,7 @@ func (ppk *PersonPublicKey) syllabEncoder() (buf []byte) {
 	// copy(buf[0:], ppk.RecordID[:])
 	syllab.SetUInt64(buf, 32, ppk.RecordStructureID)
 	syllab.SetUInt64(buf, 40, ppk.RecordSize)
-	syllab.SetInt64(buf, 48, ppk.WriteTime)
+	syllab.SetInt64(buf, 48, int64(ppk.WriteTime))
 	copy(buf[56:], ppk.OwnerAppID[:])
 
 	copy(buf[88:], ppk.AppInstanceID[:])

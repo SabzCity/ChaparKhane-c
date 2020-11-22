@@ -45,14 +45,14 @@ type PersonAuthentication struct {
 	RecordID          [32]byte
 	RecordStructureID uint64
 	RecordSize        uint64
-	WriteTime         int64
+	WriteTime         etime.Time `hash-index:"PersonID[hourly]"`
 	OwnerAppID        [32]byte
 
 	/* Unique data */
 	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
 	UserConnectionID [32]byte // Store to remember which user connection set||chanaged this record!
-	PersonID         [32]byte `ganjine:"Immutable,Unique"` // UUID of Person
-	ReferentPersonID [32]byte `ganjine:"Immutable"`
+	PersonID         [32]byte `ganjine:"Unique" hash-index:"RecordID"` // UUID of Person
+	ReferentPersonID [32]byte `hash-index:"PersonID[if,ReferentPersonID]"`
 	Status           PersonAuthenticationStatus
 
 	// Person Authentication Factors https://en.wikipedia.org/wiki/Authentication#Factors_and_identity
@@ -103,7 +103,8 @@ func (pa *PersonAuthentication) Set() (err *er.Error) {
 // GetByRecordID method read all existing record data by given RecordID!
 func (pa *PersonAuthentication) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
-		RecordID: pa.RecordID,
+		RecordID:          pa.RecordID,
+		RecordStructureID: personAuthenticationStructureID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
@@ -117,7 +118,7 @@ func (pa *PersonAuthentication) GetByRecordID() (err *er.Error) {
 	}
 
 	if pa.RecordStructureID != personAuthenticationStructureID {
-		err = ganjine.ErrGanjineMisMatchedStructureID
+		err = ganjine.ErrMisMatchedStructureID
 	}
 	return
 }
@@ -137,7 +138,7 @@ func (pa *PersonAuthentication) GetLastByPersonID() (err *er.Error) {
 
 	pa.RecordID = indexRes.IndexValues[0]
 	err = pa.GetByRecordID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", personAuthenticationStructureID)
 	}
 	return
@@ -192,9 +193,11 @@ func (pa *PersonAuthentication) IndexPersonIDforRegisterTime() {
 }
 
 func (pa *PersonAuthentication) hashWriteTimeforPersonIDHourly() (hash [32]byte) {
+	const field = "WriteTime"
 	var buf = make([]byte, 16) // 8+8
 	syllab.SetUInt64(buf, 0, personAuthenticationStructureID)
-	syllab.SetInt64(buf, 8, etime.RoundToHour(pa.WriteTime))
+	syllab.SetInt64(buf, 8, pa.WriteTime.RoundToHour())
+	copy(buf[16:], field)
 	return sha512.Sum512_256(buf)
 }
 
@@ -202,7 +205,7 @@ func (pa *PersonAuthentication) hashWriteTimeforPersonIDHourly() (hash [32]byte)
 func (pa *PersonAuthentication) IndexPersonIDforReferentPersonID() {
 	var indexRequest = gs.HashIndexSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   pa.hashReferentPersonIDforPersonID(),
+		IndexKey:   pa.hashIfReferentPersonIDforPersonID(),
 		IndexValue: pa.PersonID,
 	}
 	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
@@ -214,10 +217,12 @@ func (pa *PersonAuthentication) IndexPersonIDforReferentPersonID() {
 	}
 }
 
-func (pa *PersonAuthentication) hashReferentPersonIDforPersonID() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+32
+func (pa *PersonAuthentication) hashIfReferentPersonIDforPersonID() (hash [32]byte) {
+	const field = "IfReferentPersonID"
+	var buf = make([]byte, 40+len(field)) // 8+32
 	syllab.SetUInt64(buf, 0, personAuthenticationStructureID)
 	copy(buf[8:], pa.ReferentPersonID[:])
+	copy(buf[40:], field)
 	return sha512.Sum512_256(buf)
 }
 
@@ -234,7 +239,7 @@ func (pa *PersonAuthentication) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(pa.RecordID[:], buf[0:])
 	pa.RecordStructureID = syllab.GetUInt64(buf, 32)
 	pa.RecordSize = syllab.GetUInt64(buf, 40)
-	pa.WriteTime = syllab.GetInt64(buf, 48)
+	pa.WriteTime = etime.Time(syllab.GetInt64(buf, 48))
 	copy(pa.OwnerAppID[:], buf[56:])
 
 	copy(pa.AppInstanceID[:], buf[88:])
@@ -256,7 +261,7 @@ func (pa *PersonAuthentication) syllabEncoder() (buf []byte) {
 	// copy(buf[0:], pa.RecordID[:])
 	syllab.SetUInt64(buf, 32, pa.RecordStructureID)
 	syllab.SetUInt64(buf, 40, pa.RecordSize)
-	syllab.SetInt64(buf, 48, pa.WriteTime)
+	syllab.SetInt64(buf, 48, int64(pa.WriteTime))
 	copy(buf[56:], pa.OwnerAppID[:])
 
 	copy(buf[88:], pa.AppInstanceID[:])

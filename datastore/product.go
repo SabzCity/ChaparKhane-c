@@ -45,7 +45,7 @@ type Product struct {
 	RecordID          [32]byte
 	RecordStructureID uint64
 	RecordSize        uint64
-	WriteTime         int64
+	WriteTime         etime.Time
 	OwnerAppID        [32]byte
 
 	/* Unique data */
@@ -60,28 +60,6 @@ type Product struct {
 	ProductAuctionID     [32]byte // can be 0 for just change owner without any auction or price but very rare situation!
 	Status               ProductStatus
 }
-
-// ProductStatus indicate Product record status
-type ProductStatus uint8
-
-// Product status
-const (
-	ProductCreated ProductStatus = iota
-	ProductVoid
-	ProductPreSale // ProductPreSale use in budget analysis and also can be trade!
-
-	// Split from upper size product!
-// Split to small size product!
-
-// ManagerApprove
-// WarehouseApprove
-// ActiveWithApprove
-// ActiveWithoutApprove
-// ActiveWithOrderer
-// Inactive
-// Normal
-// Reject
-)
 
 // Set method set some data and write entire Product record!
 func (p *Product) Set() (err *er.Error) {
@@ -122,7 +100,7 @@ func (p *Product) GetByRecordID() (err *er.Error) {
 	}
 
 	if p.RecordStructureID != productStructureID {
-		err = ganjine.ErrGanjineMisMatchedStructureID
+		err = ganjine.ErrMisMatchedStructureID
 	}
 	return
 }
@@ -142,7 +120,7 @@ func (p *Product) GetLastByID() (err *er.Error) {
 
 	p.RecordID = indexRes.IndexValues[0]
 	err = p.GetByRecordID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", productStructureID)
 	}
 	return
@@ -193,7 +171,7 @@ func (p *Product) hashOwnerIDforIDDaily() (hash [32]byte) {
 	var buf = make([]byte, 48) // 8+32+8
 	syllab.SetUInt64(buf, 0, productStructureID)
 	copy(buf[8:], p.OwnerID[:])
-	syllab.SetInt64(buf, 40, etime.RoundToDay(p.WriteTime))
+	syllab.SetInt64(buf, 40, p.WriteTime.RoundToDay())
 	return sha512.Sum512_256(buf)
 }
 
@@ -214,7 +192,7 @@ func (p *Product) hashSellerIDforIDDaily() (hash [32]byte) {
 	var buf = make([]byte, 48) // 8+32+8
 	syllab.SetUInt64(buf, 0, productStructureID)
 	copy(buf[8:], p.SellerID[:])
-	syllab.SetInt64(buf, 40, etime.RoundToDay(p.WriteTime))
+	syllab.SetInt64(buf, 40, p.WriteTime.RoundToDay())
 	return sha512.Sum512_256(buf)
 }
 
@@ -235,7 +213,7 @@ func (p *Product) hashWikiIDforIDDaily() (hash [32]byte) {
 	var buf = make([]byte, 48) // 8+32+8
 	syllab.SetUInt64(buf, 0, productStructureID)
 	copy(buf[8:], p.WikiID[:])
-	syllab.SetInt64(buf, 40, etime.RoundToDay(p.WriteTime))
+	syllab.SetInt64(buf, 40, p.WriteTime.RoundToDay())
 	return sha512.Sum512_256(buf)
 }
 
@@ -258,7 +236,7 @@ func (p *Product) hashWikiIDDistributionCenterIDforIDDaily() (hash [32]byte) {
 	syllab.SetUInt64(buf, 0, productStructureID)
 	copy(buf[8:], p.WikiID[:])
 	copy(buf[40:], p.DistributionCenterID[:])
-	syllab.SetInt64(buf, 72, etime.RoundToDay(p.WriteTime))
+	syllab.SetInt64(buf, 72, p.WriteTime.RoundToDay())
 	return sha512.Sum512_256(buf)
 }
 
@@ -353,7 +331,7 @@ func (p *Product) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(p.RecordID[:], buf[0:])
 	p.RecordStructureID = syllab.GetUInt64(buf, 32)
 	p.RecordSize = syllab.GetUInt64(buf, 40)
-	p.WriteTime = syllab.GetInt64(buf, 48)
+	p.WriteTime = etime.Time(syllab.GetInt64(buf, 48))
 	copy(p.OwnerAppID[:], buf[56:])
 
 	copy(p.AppInstanceID[:], buf[88:])
@@ -375,7 +353,7 @@ func (p *Product) syllabEncoder() (buf []byte) {
 	// copy(buf[0:], p.RecordID[:])
 	syllab.SetUInt64(buf, 32, p.RecordStructureID)
 	syllab.SetUInt64(buf, 40, p.RecordSize)
-	syllab.SetInt64(buf, 48, p.WriteTime)
+	syllab.SetInt64(buf, 48, int64(p.WriteTime))
 	copy(buf[56:], p.OwnerAppID[:])
 
 	copy(buf[88:], p.AppInstanceID[:])
@@ -402,3 +380,30 @@ func (p *Product) syllabHeapLen() (ln uint32) {
 func (p *Product) syllabLen() (ln uint64) {
 	return uint64(p.syllabStackLen() + p.syllabHeapLen())
 }
+
+/*
+	-- Record types --
+*/
+
+// ProductStatus indicate Product record status
+type ProductStatus uint8
+
+// Product status
+const (
+	ProductCreated ProductStatus = iota
+	ProductVoid
+	ProductPreSale // use in budget analysis and also can be trade!
+	// 0x0 for non expire record, 0x1 for sell to first above SuggestPrice||buy first below it!
+
+	// Split from upper size product!
+// Split to small size product!
+
+// ManagerApprove
+// WarehouseApprove
+// ActiveWithApprove
+// ActiveWithoutApprove
+// ActiveWithOrderer
+// Inactive
+// Normal
+// Reject
+)

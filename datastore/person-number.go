@@ -45,7 +45,7 @@ type PersonNumber struct {
 	RecordID          [32]byte
 	RecordStructureID uint64
 	RecordSize        uint64
-	WriteTime         int64
+	WriteTime         etime.Time
 	OwnerAppID        [32]byte
 
 	/* Unique data */
@@ -94,7 +94,8 @@ func (pn *PersonNumber) Set() (err *er.Error) {
 // GetByRecordID method read all existing record data by given RecordID!
 func (pn *PersonNumber) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
-		RecordID: pn.RecordID,
+		RecordID:          pn.RecordID,
+		RecordStructureID: personNumberStructureID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
@@ -108,7 +109,7 @@ func (pn *PersonNumber) GetByRecordID() (err *er.Error) {
 	}
 
 	if pn.RecordStructureID != personNumberStructureID {
-		err = ganjine.ErrGanjineMisMatchedStructureID
+		err = ganjine.ErrMisMatchedStructureID
 	}
 	return
 }
@@ -128,7 +129,7 @@ func (pn *PersonNumber) GetLastByPersonID() (err *er.Error) {
 
 	pn.RecordID = indexRes.IndexValues[0]
 	err = pn.GetByRecordID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", personNumberStructureID)
 	}
 	return
@@ -149,7 +150,7 @@ func (pn *PersonNumber) GetLastByNumber() (err *er.Error) {
 
 	pn.PersonID = indexRes.IndexValues[0]
 	err = pn.GetLastByPersonID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", personNumberStructureID)
 	}
 	return
@@ -222,7 +223,7 @@ func (pn *PersonNumber) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(pn.RecordID[:], buf[0:])
 	pn.RecordStructureID = syllab.GetUInt64(buf, 32)
 	pn.RecordSize = syllab.GetUInt64(buf, 40)
-	pn.WriteTime = syllab.GetInt64(buf, 48)
+	pn.WriteTime = etime.Time(syllab.GetInt64(buf, 48))
 	copy(pn.OwnerAppID[:], buf[56:])
 
 	copy(pn.AppInstanceID[:], buf[88:])
@@ -239,7 +240,7 @@ func (pn *PersonNumber) syllabEncoder() (buf []byte) {
 	// copy(buf[0:], pn.RecordID[:])
 	syllab.SetUInt64(buf, 32, pn.RecordStructureID)
 	syllab.SetUInt64(buf, 40, pn.RecordSize)
-	syllab.SetInt64(buf, 48, pn.WriteTime)
+	syllab.SetInt64(buf, 48, int64(pn.WriteTime))
 	copy(buf[56:], pn.OwnerAppID[:])
 
 	copy(buf[88:], pn.AppInstanceID[:])

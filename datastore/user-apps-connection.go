@@ -5,6 +5,8 @@ package datastore
 import (
 	"crypto/sha512"
 
+	gp "../libgo/GP"
+	ip "../libgo/IP"
 	"../libgo/achaemenid"
 	"../libgo/authorization"
 	etime "../libgo/earth-time"
@@ -58,7 +60,7 @@ type UserAppsConnection struct {
 	RecordID          [32]byte
 	RecordStructureID uint64
 	RecordSize        uint64
-	WriteTime         int64
+	WriteTime         etime.Time `hash-index:"ID[daily,pair,UserType]"`
 	OwnerAppID        [32]byte
 
 	/* Unique data */
@@ -73,45 +75,56 @@ type UserAppsConnection struct {
 
 	/* Peer data */
 	// Peer Location
-	SocietyID uint32
-	RouterID  uint32
-	GPAddr    [14]byte
-	IPAddr    [16]byte
-	ThingID   [32]byte `hash-index:"ID,ID[pair,UserID],UserID"`
+	GPAddr  gp.Addr
+	IPAddr  ip.Addr
+	ThingID [32]byte `hash-index:"ID,ID[pair,UserID],UserID"`
 	// Peer Identifiers
-	UserID           [32]byte            `hash-index:"ID,ID[pair,DelegateUserID],ID[if,DelegateUserID],ThingID"`
-	UserType         achaemenid.UserType `hash-index:"ID[daily]"`
-	DelegateUserID   [32]byte            `hash-index:"ID,UserID"`
-	DelegateUserType achaemenid.UserType
+	UserID           [32]byte               `hash-index:"ID,ID[pair,DelegateUserID],ID[if,DelegateUserID],ThingID"`
+	UserType         authorization.UserType `hash-index:"ID[daily]"`
+	DelegateUserID   [32]byte               `hash-index:"ID,UserID"`
+	DelegateUserType authorization.UserType
 
 	/* Security data */
 	PeerPublicKey [32]byte
 	AccessControl authorization.AccessControl
 
 	// Metrics data
-	LastUsage             int64  // Last use of this connection
-	PacketPayloadSize     uint16 // Always must respect max frame size, so usually packets can't be more than 8192Byte!
-	MaxBandwidth          uint64 // Peer must respect this, otherwise connection will terminate and GP go to black list!
-	ServiceCallCount      uint64 // Count successful or unsuccessful request.
-	BytesSent             uint64 // Counts the bytes of payload data sent.
-	PacketsSent           uint64 // Counts packets sent.
-	BytesReceived         uint64 // Counts the bytes of payload data Receive.
-	PacketsReceived       uint64 // Counts packets Receive.
-	FailedPacketsReceived uint64 // Counts failed packets receive for firewalling server from some attack types!
-	FailedServiceCall     uint64 // Counts failed service call e.g. data validation failed, ...
+	LastUsage             etime.Time // Last use of this connection
+	PacketPayloadSize     uint16     // Always must respect max frame size, so usually packets can't be more than 8192Byte!
+	MaxBandwidth          uint64     // Peer must respect this, otherwise connection will terminate and GP go to black list!
+	ServiceCallCount      uint64     // Count successful or unsuccessful request.
+	BytesSent             uint64     // Counts the bytes of payload data sent.
+	PacketsSent           uint64     // Counts packets sent.
+	BytesReceived         uint64     // Counts the bytes of payload data Receive.
+	PacketsReceived       uint64     // Counts packets Receive.
+	FailedPacketsReceived uint64     // Counts failed packets receive for firewalling server from some attack types!
+	FailedServiceCall     uint64     // Counts failed service call e.g. data validation failed, ...
 }
 
-// UserAppsConnectionStatus use to indicate UserAppsConnection record status
-type UserAppsConnectionStatus uint8
+// SaveNew method set some data and write entire UserAppsConnection record with all indexes!
+func (uac *UserAppsConnection) SaveNew() (err *er.Error) {
+	err = uac.Set()
+	if err != nil {
+		return
+	}
 
-// UserAppsConnection status
-const (
-	UserAppsConnectionUnset UserAppsConnectionStatus = iota
-	UserAppsConnectionIssued
-	UserAppsConnectionUpdate
-	UserAppsConnectionExpired
-	UserAppsConnectionRevoked
-)
+	uac.HashIndexRecordIDForID()
+	if uac.ThingID != [32]byte{} {
+		uac.IndexIDforThingID()
+		uac.IndexIDforUserIDThingID()
+		uac.HashListThingIDForUserID()
+		uac.ListUserIDforThingID()
+	}
+	if uac.DelegateUserID != [32]byte{} {
+		uac.IndexIDforDelegateUserID()
+		uac.IndexIDforUserIDDelegateUserID()
+		uac.IndexIDforUserIDifDelegateUserID()
+		uac.ListDelegateUserIDforUserID()
+	} else {
+		uac.IndexIDforUserID()
+	}
+	return
+}
 
 // Set method set some data and write entire UserAppsConnection record!
 func (uac *UserAppsConnection) Set() (err *er.Error) {
@@ -139,6 +152,7 @@ func (uac *UserAppsConnection) Set() (err *er.Error) {
 func (uac *UserAppsConnection) GetByRecordID() (err *er.Error) {
 	var req = gs.GetRecordReq{
 		RecordID: uac.RecordID,
+		RecordStructureID: userAppsConnectionStructureID,
 	}
 	var res *gs.GetRecordRes
 	res, err = gsdk.GetRecord(cluster, &req)
@@ -152,7 +166,7 @@ func (uac *UserAppsConnection) GetByRecordID() (err *er.Error) {
 	}
 
 	if uac.RecordStructureID != userAppsConnectionStructureID {
-		err = ganjine.ErrGanjineMisMatchedStructureID
+		err = ganjine.ErrMisMatchedStructureID
 	}
 	return
 }
@@ -172,7 +186,7 @@ func (uac *UserAppsConnection) GetLastByID() (err *er.Error) {
 
 	uac.RecordID = indexRes.IndexValues[0]
 	err = uac.GetByRecordID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", userAppsConnectionStructureID)
 	}
 	return
@@ -193,7 +207,7 @@ func (uac *UserAppsConnection) GetLastByUserIDThingID() (err *er.Error) {
 
 	uac.ID = indexRes.IndexValues[0]
 	err = uac.GetLastByID()
-	if err == ganjine.ErrGanjineMisMatchedStructureID {
+	if err.Equal(ganjine.ErrMisMatchedStructureID) {
 		log.Warn("Platform collapsed!! HASH Collision Occurred on", userAppsConnectionStructureID)
 	}
 	return
@@ -248,9 +262,8 @@ func (uac *UserAppsConnection) GetIDsByGottenDelegate(offset, limit uint64) (IDs
 	-- PRIMARY INDEX --
 */
 
-// IndexID index Unique-Field(ID) chain to retrieve last record version fast later.
-// Call in each update to the exiting record!
-func (uac *UserAppsConnection) IndexID() {
+// HashIndexRecordIDForID save RecordID chain for ID
+func (uac *UserAppsConnection) HashIndexRecordIDForID() {
 	var indexRequest = gs.HashIndexSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
 		IndexKey:   uac.hashIDforRecordID(),
@@ -263,9 +276,11 @@ func (uac *UserAppsConnection) IndexID() {
 }
 
 func (uac *UserAppsConnection) hashIDforRecordID() (hash [32]byte) {
-	var buf = make([]byte, 32) // 8+32
+	const field = "ID"
+	var buf = make([]byte, 40+len(field)) // 8+32
 	syllab.SetUInt64(buf, 0, userAppsConnectionStructureID)
 	copy(buf[8:], uac.ID[:])
+	copy(buf[40:], field)
 	return sha512.Sum512_256(buf)
 }
 
@@ -273,7 +288,7 @@ func (uac *UserAppsConnection) hashIDforRecordID() (hash [32]byte) {
 	-- SECONDARY INDEXES --
 */
 
-// IndexIDforThingID index to retrieve all Unique-Field(ID) owned by given ThingID later.
+// IndexIDforThingID save ID chain for ThingID.
 // Use in emergency to expire all connection on the Thing!
 // Don't call in update to an exiting record!
 func (uac *UserAppsConnection) IndexIDforThingID() {
@@ -289,13 +304,15 @@ func (uac *UserAppsConnection) IndexIDforThingID() {
 }
 
 func (uac *UserAppsConnection) hashThingIDforID() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+32
+	const field = "ThingID"
+	var buf = make([]byte, 40+len(field)) // 8+32
 	syllab.SetUInt64(buf, 0, userAppsConnectionStructureID)
 	copy(buf[8:], uac.ThingID[:])
+	copy(buf[40:], field)
 	return sha512.Sum512_256(buf)
 }
 
-// IndexIDforUserID index to retrieve all Unique-Field(ID) owned by given UserID.
+// IndexIDforUserID save ID chain for UserID.
 // Don't call in update to an exiting record!
 func (uac *UserAppsConnection) IndexIDforUserID() {
 	var indexRequest = gs.HashIndexSetValueReq{
@@ -310,13 +327,15 @@ func (uac *UserAppsConnection) IndexIDforUserID() {
 }
 
 func (uac *UserAppsConnection) hashUserIDforID() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+32
+	const field = "UserID"
+	var buf = make([]byte, 40+len(field)) // 8+32
 	syllab.SetUInt64(buf, 0, userAppsConnectionStructureID)
 	copy(buf[8:], uac.UserID[:])
+	copy(buf[40:], field)
 	return sha512.Sum512_256(buf)
 }
 
-// IndexIDforDelegateUserID index to retrieve all Unique-Field(ID) owned by given DelegateUserID.
+// IndexIDforDelegateUserID save ID chain for DelegateUserID.
 // Don't call in update to an exiting record!
 func (uac *UserAppsConnection) IndexIDforDelegateUserID() {
 	var indexRequest = gs.HashIndexSetValueReq{
@@ -339,7 +358,7 @@ func (uac *UserAppsConnection) hashDelegateUserIDforID() (hash [32]byte) {
 	return sha512.Sum512_256(buf)
 }
 
-// IndexIDforUserIDDelegateUserID index to retrieve all Unique-Field(ID) owned by given UserID + DelegateUserID
+// IndexIDforUserIDDelegateUserID save ID chain for UserID+DelegateUserID
 // Don't call in update to an exiting record!
 func (uac *UserAppsConnection) IndexIDforUserIDDelegateUserID() {
 	var indexRequest = gs.HashIndexSetValueReq{
@@ -363,7 +382,7 @@ func (uac *UserAppsConnection) hashUserIDDelegateUserIDforID() (hash [32]byte) {
 	return sha512.Sum512_256(buf)
 }
 
-// IndexIDforUserIDifDelegateUserID index to retrieve all Unique-Field(ID) owned by given UserID if DelegateUserID exist
+// IndexIDforUserIDifDelegateUserID save ID chain for UserID if DelegateUserID exist
 // Don't call in update to an exiting record!
 func (uac *UserAppsConnection) IndexIDforUserIDifDelegateUserID() {
 	var indexRequest = gs.HashIndexSetValueReq{
@@ -386,7 +405,7 @@ func (uac *UserAppsConnection) hashUserIDifDelegateUserIDforID() (hash [32]byte)
 	return sha512.Sum512_256(buf)
 }
 
-// IndexIDforUserIDThingID index to retrieve all Unique-Field(ID) owned by given UserID+ThingID.
+// IndexIDforUserIDThingID save ID chain for UserID+ThingID.
 // Don't call in update to an exiting record!
 func (uac *UserAppsConnection) IndexIDforUserIDThingID() {
 	var indexRequest = gs.HashIndexSetValueReq{
@@ -401,14 +420,16 @@ func (uac *UserAppsConnection) IndexIDforUserIDThingID() {
 }
 
 func (uac *UserAppsConnection) hashUserIDThingIDforID() (hash [32]byte) {
-	var buf = make([]byte, 72) // 8+32+32
+	const field = "UserIDThingID"
+	var buf = make([]byte, 72+len(field)) // 8+32+32
 	syllab.SetUInt64(buf, 0, userAppsConnectionStructureID)
 	copy(buf[8:], uac.UserID[:])
 	copy(buf[40:], uac.ThingID[:])
+	copy(buf[72:], field)
 	return sha512.Sum512_256(buf)
 }
 
-// IndexIDforUserTypeDaily index uac.ID that belong to UserType on daily base.
+// IndexIDforUserTypeDaily save ID chain for UserType+WriteTime[daily]
 // Mostly use to index GuestType connections to research on them!
 // Don't call in update to an exiting record!
 func (uac *UserAppsConnection) IndexIDforUserTypeDaily() {
@@ -424,10 +445,12 @@ func (uac *UserAppsConnection) IndexIDforUserTypeDaily() {
 }
 
 func (uac *UserAppsConnection) hashUserTypeDailyforID() (hash [32]byte) {
-	var buf = make([]byte, 17) // 8+1+8
+	const field = "UserTypeWriteTime"
+	var buf = make([]byte, 17+len(field)) // 8+1+8
 	syllab.SetUInt64(buf, 0, userAppsConnectionStructureID)
 	syllab.SetUInt8(buf, 8, uint8(uac.UserType))
-	syllab.SetInt64(buf, 9, etime.RoundToDay(uac.WriteTime))
+	syllab.SetInt64(buf, 9, uac.WriteTime.RoundToDay())
+	copy(buf[17:], field)
 	return sha512.Sum512_256(buf)
 }
 
@@ -435,9 +458,9 @@ func (uac *UserAppsConnection) hashUserTypeDailyforID() (hash [32]byte) {
 	-- LIST FIELDS --
 */
 
-// ListThingIDforUserID list all ThingID own by specific UserID.
+// HashListThingIDForUserID list ThingID chain for UserID.
 // Don't call in update to an exiting record!
-func (uac *UserAppsConnection) ListThingIDforUserID() {
+func (uac *UserAppsConnection) HashListThingIDForUserID() {
 	var indexRequest = gs.HashIndexSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
 		IndexKey:   uac.hashUserIDforThingID(),
@@ -458,7 +481,7 @@ func (uac *UserAppsConnection) hashUserIDforThingID() (hash [32]byte) {
 	return sha512.Sum512_256(buf)
 }
 
-// ListUserIDforThingID store all UserID own by specific ThingID.
+// ListUserIDforThingID list UserID chain for ThingID.
 // Don't call in update to an exiting record!
 func (uac *UserAppsConnection) ListUserIDforThingID() {
 	var indexRequest = gs.HashIndexSetValueReq{
@@ -481,7 +504,7 @@ func (uac *UserAppsConnection) hashThindIDforUserID() (hash [32]byte) {
 	return sha512.Sum512_256(buf)
 }
 
-// ListDelegateUserIDforUserID list all DelegateUserID own by specific UserID.
+// ListDelegateUserIDforUserID list DelegateUserID chain for UserID.
 // Don't call in update to an exiting record!
 func (uac *UserAppsConnection) ListDelegateUserIDforUserID() {
 	var indexRequest = gs.HashIndexSetValueReq{
@@ -517,7 +540,7 @@ func (uac *UserAppsConnection) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(uac.RecordID[:], buf[0:])
 	uac.RecordStructureID = syllab.GetUInt64(buf, 32)
 	uac.RecordSize = syllab.GetUInt64(buf, 40)
-	uac.WriteTime = syllab.GetInt64(buf, 48)
+	uac.WriteTime = etime.Time(syllab.GetInt64(buf, 48))
 	copy(uac.OwnerAppID[:], buf[56:])
 
 	copy(uac.AppInstanceID[:], buf[88:])
@@ -528,30 +551,28 @@ func (uac *UserAppsConnection) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(uac.ID[:], buf[161:])
 	uac.Weight = achaemenid.Weight(syllab.GetUInt8(buf, 193))
 
-	uac.SocietyID = syllab.GetUInt32(buf, 194)
-	uac.RouterID = syllab.GetUInt32(buf, 198)
-	copy(uac.GPAddr[:], buf[202:])
-	copy(uac.IPAddr[:], buf[216:])
-	copy(uac.ThingID[:], buf[232:])
+	copy(uac.GPAddr[:], buf[194:])
+	copy(uac.IPAddr[:], buf[208:])
+	copy(uac.ThingID[:], buf[224:])
 
-	copy(uac.UserID[:], buf[264:])
-	uac.UserType = achaemenid.UserType(syllab.GetUInt8(buf, 296))
-	copy(uac.DelegateUserID[:], buf[297:])
-	uac.DelegateUserType = achaemenid.UserType(syllab.GetUInt8(buf, 329))
+	copy(uac.UserID[:], buf[256:])
+	uac.UserType = authorization.UserType(syllab.GetUInt8(buf, 288))
+	copy(uac.DelegateUserID[:], buf[289:])
+	uac.DelegateUserType = authorization.UserType(syllab.GetUInt8(buf, 321))
 
-	copy(uac.PeerPublicKey[:], buf[330:])
-	uac.AccessControl.SyllabDecoder(buf, 362)
+	copy(uac.PeerPublicKey[:], buf[322:])
+	uac.AccessControl.SyllabDecoder(buf, 354)
 
-	uac.LastUsage = syllab.GetInt64(buf, 362+uac.AccessControl.SyllabStackLen())
-	uac.PacketPayloadSize = syllab.GetUInt16(buf, 370+uac.AccessControl.SyllabStackLen())
-	uac.MaxBandwidth = syllab.GetUInt64(buf, 372+uac.AccessControl.SyllabStackLen())
-	uac.ServiceCallCount = syllab.GetUInt64(buf, 380+uac.AccessControl.SyllabStackLen())
-	uac.BytesSent = syllab.GetUInt64(buf, 388+uac.AccessControl.SyllabStackLen())
-	uac.PacketsSent = syllab.GetUInt64(buf, 396+uac.AccessControl.SyllabStackLen())
-	uac.BytesReceived = syllab.GetUInt64(buf, 404+uac.AccessControl.SyllabStackLen())
-	uac.PacketsReceived = syllab.GetUInt64(buf, 412+uac.AccessControl.SyllabStackLen())
-	uac.FailedPacketsReceived = syllab.GetUInt64(buf, 420+uac.AccessControl.SyllabStackLen())
-	uac.FailedServiceCall = syllab.GetUInt64(buf, 428+uac.AccessControl.SyllabStackLen())
+	uac.LastUsage = etime.Time(syllab.GetInt64(buf, 354+uac.AccessControl.SyllabStackLen()))
+	uac.PacketPayloadSize = syllab.GetUInt16(buf, 362+uac.AccessControl.SyllabStackLen())
+	uac.MaxBandwidth = syllab.GetUInt64(buf, 364+uac.AccessControl.SyllabStackLen())
+	uac.ServiceCallCount = syllab.GetUInt64(buf, 372+uac.AccessControl.SyllabStackLen())
+	uac.BytesSent = syllab.GetUInt64(buf, 380+uac.AccessControl.SyllabStackLen())
+	uac.PacketsSent = syllab.GetUInt64(buf, 388+uac.AccessControl.SyllabStackLen())
+	uac.BytesReceived = syllab.GetUInt64(buf, 396+uac.AccessControl.SyllabStackLen())
+	uac.PacketsReceived = syllab.GetUInt64(buf, 404+uac.AccessControl.SyllabStackLen())
+	uac.FailedPacketsReceived = syllab.GetUInt64(buf, 412+uac.AccessControl.SyllabStackLen())
+	uac.FailedServiceCall = syllab.GetUInt64(buf, 420+uac.AccessControl.SyllabStackLen())
 	return
 }
 
@@ -562,7 +583,7 @@ func (uac *UserAppsConnection) syllabEncoder() (buf []byte) {
 	// copy(buf[0:], uac.RecordID[:])
 	syllab.SetUInt64(buf, 32, uac.RecordStructureID)
 	syllab.SetUInt64(buf, 40, uac.RecordSize)
-	syllab.SetInt64(buf, 48, uac.WriteTime)
+	syllab.SetInt64(buf, 48, int64(uac.WriteTime))
 	copy(buf[56:], uac.OwnerAppID[:])
 
 	copy(buf[88:], uac.AppInstanceID[:])
@@ -573,35 +594,33 @@ func (uac *UserAppsConnection) syllabEncoder() (buf []byte) {
 	copy(buf[161:], uac.ID[:])
 	syllab.SetUInt8(buf, 193, uint8(uac.Weight))
 
-	syllab.SetUInt32(buf, 194, uac.SocietyID)
-	syllab.SetUInt32(buf, 198, uac.RouterID)
-	copy(buf[202:], uac.GPAddr[:])
-	copy(buf[216:], uac.IPAddr[:])
-	copy(buf[232:], uac.ThingID[:])
+	copy(buf[194:], uac.GPAddr[:])
+	copy(buf[208:], uac.IPAddr[:])
+	copy(buf[224:], uac.ThingID[:])
 
-	copy(buf[264:], uac.UserID[:])
-	syllab.SetUInt8(buf, 296, uint8(uac.UserType))
-	copy(buf[297:], uac.DelegateUserID[:])
-	syllab.SetUInt8(buf, 329, uint8(uac.DelegateUserType))
+	copy(buf[256:], uac.UserID[:])
+	syllab.SetUInt8(buf, 288, uint8(uac.UserType))
+	copy(buf[289:], uac.DelegateUserID[:])
+	syllab.SetUInt8(buf, 321, uint8(uac.DelegateUserType))
 
-	copy(buf[330:], uac.PeerPublicKey[:])
-	uac.AccessControl.SyllabEncoder(buf, 362, hsi)
+	copy(buf[322:], uac.PeerPublicKey[:])
+	uac.AccessControl.SyllabEncoder(buf, 354, hsi)
 
-	syllab.SetInt64(buf, 362+uac.AccessControl.SyllabStackLen(), uac.LastUsage)
-	syllab.SetUInt16(buf, 370+uac.AccessControl.SyllabStackLen(), uac.PacketPayloadSize)
-	syllab.SetUInt64(buf, 372+uac.AccessControl.SyllabStackLen(), uac.MaxBandwidth)
-	syllab.SetUInt64(buf, 380+uac.AccessControl.SyllabStackLen(), uac.ServiceCallCount)
-	syllab.SetUInt64(buf, 388+uac.AccessControl.SyllabStackLen(), uac.BytesSent)
-	syllab.SetUInt64(buf, 396+uac.AccessControl.SyllabStackLen(), uac.PacketsSent)
-	syllab.SetUInt64(buf, 404+uac.AccessControl.SyllabStackLen(), uac.BytesReceived)
-	syllab.SetUInt64(buf, 412+uac.AccessControl.SyllabStackLen(), uac.PacketsReceived)
-	syllab.SetUInt64(buf, 420+uac.AccessControl.SyllabStackLen(), uac.FailedPacketsReceived)
-	syllab.SetUInt64(buf, 428+uac.AccessControl.SyllabStackLen(), uac.FailedServiceCall)
+	syllab.SetInt64(buf, 354+uac.AccessControl.SyllabStackLen(), int64(uac.LastUsage))
+	syllab.SetUInt16(buf, 362+uac.AccessControl.SyllabStackLen(), uac.PacketPayloadSize)
+	syllab.SetUInt64(buf, 364+uac.AccessControl.SyllabStackLen(), uac.MaxBandwidth)
+	syllab.SetUInt64(buf, 372+uac.AccessControl.SyllabStackLen(), uac.ServiceCallCount)
+	syllab.SetUInt64(buf, 380+uac.AccessControl.SyllabStackLen(), uac.BytesSent)
+	syllab.SetUInt64(buf, 388+uac.AccessControl.SyllabStackLen(), uac.PacketsSent)
+	syllab.SetUInt64(buf, 396+uac.AccessControl.SyllabStackLen(), uac.BytesReceived)
+	syllab.SetUInt64(buf, 404+uac.AccessControl.SyllabStackLen(), uac.PacketsReceived)
+	syllab.SetUInt64(buf, 412+uac.AccessControl.SyllabStackLen(), uac.FailedPacketsReceived)
+	syllab.SetUInt64(buf, 420+uac.AccessControl.SyllabStackLen(), uac.FailedServiceCall)
 	return
 }
 
 func (uac *UserAppsConnection) syllabStackLen() (ln uint32) {
-	return 436 + uac.AccessControl.SyllabStackLen()
+	return 428 + uac.AccessControl.SyllabStackLen()
 }
 
 func (uac *UserAppsConnection) syllabHeapLen() (ln uint32) {
@@ -613,3 +632,19 @@ func (uac *UserAppsConnection) syllabHeapLen() (ln uint32) {
 func (uac *UserAppsConnection) syllabLen() (ln uint64) {
 	return uint64(uac.syllabStackLen() + uac.syllabHeapLen())
 }
+
+/*
+	-- Record types --
+*/
+
+// UserAppsConnectionStatus use to indicate UserAppsConnection record status
+type UserAppsConnectionStatus uint8
+
+// UserAppsConnection status
+const (
+	UserAppsConnectionUnset UserAppsConnectionStatus = iota
+	UserAppsConnectionIssued
+	UserAppsConnectionUpdate
+	UserAppsConnectionExpired
+	UserAppsConnectionRevoked
+)
