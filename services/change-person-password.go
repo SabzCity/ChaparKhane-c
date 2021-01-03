@@ -4,79 +4,92 @@ package services
 
 import (
 	"../libgo/achaemenid"
+	"../libgo/authorization"
+	er "../libgo/error"
 	"../libgo/http"
 	"../libgo/json"
+	lang "../libgo/language"
+	"../libgo/srpc"
 )
 
 var changePersonPasswordService = achaemenid.Service{
 	ID:                4266514739,
-	URI:               "", // API services can set like "/apis?4266514739" but it is not efficient, find services by ID.
-	Name:              "ChangePersonPassword",
 	IssueDate:         1592389987,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "",
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
-	Description: []string{
-		"Change password in active person connection not to recover account!",
+
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDUpdate,
+		UserType: authorization.UserTypeAll,
 	},
-	TAGS:        []string{"Authentication"},
+
+	Name: map[lang.Language]string{
+		lang.LanguageEnglish: "ChangePersonPassword",
+	},
+	Description: map[lang.Language]string{
+		lang.LanguageEnglish: "Change password in active person connection not to recover account!",
+	},
+	TAGS: []string{
+		"PersonAuthentication",
+	},
+
 	SRPCHandler: ChangePersonPasswordSRPC,
 	HTTPHandler: ChangePersonPasswordHTTP,
 }
 
 // ChangePersonPasswordSRPC is sRPC handler of ChangePersonPassword service.
-func ChangePersonPasswordSRPC(s *achaemenid.Server, st *achaemenid.Stream) {
+func ChangePersonPasswordSRPC(st *achaemenid.Stream) {
 	var req = &changePersonPasswordReq{}
-	st.ReqRes.Err = req.syllabDecoder(st.Payload[4:])
-	if st.ReqRes.Err != nil {
+	st.Err = req.syllabDecoder(srpc.GetPayload(st.IncomePayload))
+	if st.Err != nil {
 		return
 	}
 
 	var res *changePersonPasswordRes
-	res, st.ReqRes.Err = changePersonPassword(st, req)
+	res, st.Err = changePersonPassword(st, req)
 	// Check if any error occur in bussiness logic
-	if st.ReqRes.Err != nil {
+	if st.Err != nil {
 		return
 	}
 
-	st.ReqRes.Payload = res.syllabEncoder(4)
+	st.OutcomePayload = make([]byte, res.syllabLen()+4)
+	res.syllabEncoder(srpc.GetPayload(st.OutcomePayload))
 }
 
 // ChangePersonPasswordHTTP is HTTP handler of ChangePersonPassword service.
-func ChangePersonPasswordHTTP(s *achaemenid.Server, st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
+func ChangePersonPasswordHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
 	var req = &changePersonPasswordReq{}
-	st.ReqRes.Err = req.jsonDecoder(httpReq.Body)
-	if st.ReqRes.Err != nil {
+	st.Err = req.jsonDecoder(httpReq.Body)
+	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
 	var res *changePersonPasswordRes
-	res, st.ReqRes.Err = changePersonPassword(st, req)
+	res, st.Err = changePersonPassword(st, req)
 	// Check if any error occur in bussiness logic
-	if st.ReqRes.Err != nil {
+	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
-	httpRes.Body, st.ReqRes.Err = res.jsonEncoder()
-	// st.ReqRes.Err make occur on just memory full!
-
 	httpRes.SetStatus(http.StatusOKCode, http.StatusOKPhrase)
-	httpRes.Header.SetValue(http.HeaderKeyContentType, "application/json")
+	httpRes.Header.Set(http.HeaderKeyContentType, "application/json")
+	httpRes.Body = res.jsonEncoder()
 }
 
-type changePersonPasswordReq struct{
-	OldPassword [32]byte `valid:"Password"`
-	NewPassword [32]byte `valid:"Password"`
+type changePersonPasswordReq struct {
+	OldPassword [32]byte `valid:"Password" json:",string"`
+	NewPassword [32]byte `valid:"Password" json:",string"`
 	OTP         uint32
 }
 
 type changePersonPasswordRes struct{}
 
-func changePersonPassword(st *achaemenid.Stream, req *changePersonPasswordReq) (res *changePersonPasswordRes, err error) {
-	// TODO::: Authenticate request first by service policy.
+func changePersonPassword(st *achaemenid.Stream, req *changePersonPasswordReq) (res *changePersonPasswordRes, err *er.Error) {
+	// TODO::: Authenticate & Authorizing request first by service policy.
 
 	err = st.Authorize()
 	if err != nil {
@@ -99,27 +112,36 @@ func changePersonPassword(st *achaemenid.Stream, req *changePersonPasswordReq) (
 	return
 }
 
-func (req *changePersonPasswordReq) validator() (err error) {
+func (req *changePersonPasswordReq) validator() (err *er.Error) {
 	return
 }
 
-func (req *changePersonPasswordReq) syllabDecoder(buf []byte) (err error) {
+func (req *changePersonPasswordReq) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (req *changePersonPasswordReq) jsonDecoder(buf []byte) (err error) {
-	// TODO::: Help to complete json generator package to have better performance!
+func (req *changePersonPasswordReq) jsonDecoder(buf []byte) (err *er.Error) {
 	err = json.UnMarshal(buf, req)
 	return
 }
 
-// offset add free space by given number at begging of return slice that almost just use in sRPC protocol! It can be 0!!
-func (res *changePersonPasswordRes) syllabEncoder(offset int) (buf []byte) {
+func (res *changePersonPasswordRes) syllabEncoder(buf []byte) {
 	return
 }
 
-func (res *changePersonPasswordRes) jsonEncoder() (buf []byte, err error) {
-	// TODO::: Help to complete json generator package to have better performance!
-	buf, err = json.Marshal(res)
+func (res *changePersonPasswordRes) syllabStackLen() (ln uint32) {
+	return 0
+}
+
+func (res *changePersonPasswordRes) syllabHeapLen() (ln uint32) {
+	return
+}
+
+func (res *changePersonPasswordRes) syllabLen() (ln int) {
+	return int(res.syllabStackLen() + res.syllabHeapLen())
+}
+
+func (res *changePersonPasswordRes) jsonEncoder() (buf []byte) {
+	buf, _ = json.Marshal(res)
 	return
 }

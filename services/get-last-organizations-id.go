@@ -17,7 +17,7 @@ import (
 )
 
 var getLastOrganizationsIDService = achaemenid.Service{
-	ID:                737303075,
+	ID:                278690539,
 	IssueDate:         1604573930,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
@@ -30,10 +30,10 @@ var getLastOrganizationsIDService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Get Last Organizations ID",
+		lang.LanguageEnglish: "Get Last Organizations ID",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "return last 9 org ID register in platform in last 30 days",
+		lang.LanguageEnglish: "return last 9 org ID register in platform in last 30 days",
 	},
 	TAGS: []string{
 		"OrganizationAuthentication",
@@ -80,7 +80,7 @@ func getLastOrganizationsID(st *achaemenid.Stream) (res *getLastOrganizationsIDR
 	var oa = datastore.OrganizationAuthentication{
 		WriteTime: etime.Now(),
 	}
-	res.IDs, err = oa.GetLastIDsByHashIndex(18446744073709551615, 9, 30)
+	res.IDs, err = oa.FindLastIDs(18446744073709551615, 9, 30)
 	if err.Equal(ganjine.ErrRecordNotFound) {
 		err = nil
 	}
@@ -124,20 +124,16 @@ func (res *getLastOrganizationsIDRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(6)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "IDs":
 			res.IDs, err = decoder.Decode32ByteArraySliceAsBase64()
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}

@@ -7,7 +7,6 @@ import (
 	"strconv"
 
 	"../libgo/achaemenid"
-	"../libgo/asanak.com"
 	"../libgo/authorization"
 	"../libgo/convert"
 	er "../libgo/error"
@@ -16,6 +15,7 @@ import (
 	lang "../libgo/language"
 	"../libgo/log"
 	"../libgo/otp"
+	"../libgo/sdk/asanak.com"
 	"../libgo/srpc"
 	"../libgo/syllab"
 )
@@ -23,19 +23,22 @@ import (
 // https://tools.ietf.org/html/rfc6238
 var sendOtpService = achaemenid.Service{
 	ID:                633216246,
-	URI:               "", // API services can set like "/apis?633216246" but it is not efficient, find services by ID.
-	CRUD:              authorization.CRUDRead,
 	IssueDate:         1592374531,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "",
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
 
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDRead,
+		UserType: authorization.UserTypeOrg,
+	},
+
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "SendOtp",
+		lang.LanguageEnglish: "SendOtp",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: `Request to get approve code for given phone or email.
+		lang.LanguageEnglish: `Request to get approve code for given phone or email.
 It can use for many purpose e.g. to recover person, improve account security by force use OTP in some very dangerous operation`,
 	},
 	TAGS: []string{
@@ -114,10 +117,12 @@ func sendOtp(st *achaemenid.Stream, req *sendOtpReq) (res *sendOtpRes, err *er.E
 		return
 	}
 
-	// TODO::: Prevent DDos attack by do some easy process for user e.g. captcha is not good way!
-	err = phraseCaptchas.Check(req.CaptchaID)
-	if err != nil {
-		return
+	if st.Connection.UserType == authorization.UserTypeGuest {
+		// TODO::: Prevent DDos attack by do some easy process for user e.g. captcha is not good way!
+		err = phraseCaptchas.Check(req.CaptchaID)
+		if err != nil {
+			return
+		}
 	}
 
 	res = &sendOtpRes{}
@@ -166,16 +171,16 @@ func sendOtp(st *achaemenid.Stream, req *sendOtpReq) (res *sendOtpRes, err *er.E
 					Destination: []string{strconv.FormatUint(req.PhoneNumber, 10)},
 				}
 				switch req.Language {
-				case lang.PersianLanguage:
-					SendSMSReq.Message = make([]byte, 0, len(persianSMSTemplate)+smsOTPDigits+len(server.Manifest.DomainName)+smsOTPDigits+5)
+				case lang.LanguagePersian:
+					SendSMSReq.Message = make([]byte, 0, len(persianSMSTemplate)+smsOTPDigits+len(achaemenid.Server.Manifest.DomainName)+smsOTPDigits+5)
 					SendSMSReq.Message = append(SendSMSReq.Message, persianSMSTemplate...)
 				default:
-					SendSMSReq.Message = make([]byte, 0, len(englishSMSTemplate)+smsOTPDigits+len(server.Manifest.DomainName)+smsOTPDigits+5)
+					SendSMSReq.Message = make([]byte, 0, len(englishSMSTemplate)+smsOTPDigits+len(achaemenid.Server.Manifest.DomainName)+smsOTPDigits+5)
 					SendSMSReq.Message = append(SendSMSReq.Message, englishSMSTemplate...)
 				}
 				SendSMSReq.Message = strconv.AppendUint(SendSMSReq.Message, timeOTP, 10)
 				// Add web-otp
-				SendSMSReq.Message = append(SendSMSReq.Message, "\n\n@"+server.Manifest.DomainName+" #"...)
+				SendSMSReq.Message = append(SendSMSReq.Message, "\n\n@"+achaemenid.Server.Manifest.DomainName+" #"...)
 				SendSMSReq.Message = strconv.AppendUint(SendSMSReq.Message, timeOTP, 10)
 
 				var SendSMSRes asanak.SendSMSRes
@@ -194,6 +199,10 @@ func sendOtp(st *achaemenid.Stream, req *sendOtpReq) (res *sendOtpRes, err *er.E
 func (req *sendOtpReq) validator() (err *er.Error) {
 	return
 }
+
+/*
+	Request Encoders & Decoders
+*/
 
 func (req *sendOtpReq) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < req.syllabStackLen() {
@@ -217,59 +226,35 @@ func (req *sendOtpReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'C':
-			decoder.SetFounded()
-			decoder.Offset(11)
-			decoder.Offset(1)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "CaptchaID":
 			err = decoder.DecodeByteArrayAsBase64(req.CaptchaID[:])
-			if err != nil {
-				return
-			}
-		case 'E':
-			decoder.SetFounded()
-			decoder.Offset(7)
-			decoder.Offset(1)
-			req.Email = decoder.DecodeString()
-		case 'P':
-			switch decoder.Buf[5] {
-			case 'N':
-				decoder.SetFounded()
-				decoder.Offset(13)
-				req.PhoneNumber, err = decoder.DecodeUInt64()
-				if err != nil {
-					return
-				}
-			case 'T':
-				decoder.SetFounded()
-				decoder.Offset(11)
-				var num uint64
-				num, err = decoder.DecodeUInt64()
-				if err != nil {
-					return
-				}
-				req.PhoneType = uint8(num)
-			}
-		case 'L':
-			decoder.SetFounded()
-			decoder.Offset(10)
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
+		case "Email":
+			req.Email, err = decoder.DecodeString()
+		case "PhoneNumber":
+			req.PhoneNumber, err = decoder.DecodeUInt64()
+		case "PhoneType":
+			req.PhoneType, err = decoder.DecodeUInt8()
+		case "Language":
+			var num uint32
+			num, err = decoder.DecodeUInt32()
 			req.Language = lang.Language(num)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
 	return
 }
+
+/*
+	Response Encoders & Decoders
+*/
 
 func (res *sendOtpRes) syllabEncoder(buf []byte) {
 	syllab.SetUInt64(buf, 0, res.OTPID)
@@ -300,7 +285,6 @@ func (res *sendOtpRes) jsonEncoder() (buf []byte) {
 }
 
 func (res *sendOtpRes) jsonLen() (ln int) {
-	ln += 20
-	ln += 10
+	ln = 30
 	return
 }

@@ -12,22 +12,27 @@ import (
 	lang "../libgo/language"
 	"../libgo/srpc"
 	"../libgo/syllab"
+	"../libgo/validators"
 )
 
 var updateUserAppConnectionService = achaemenid.Service{
 	ID:                1678413553,
-	CRUD:              authorization.CRUDUpdate,
 	IssueDate:         1604152374,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
 
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDUpdate,
+		UserType: authorization.UserTypeAll ^ authorization.UserTypeGuest,
+	},
+
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Update User App Connection",
+		lang.LanguageEnglish: "Update User App Connection",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "Use to update or expire or revoke the connection",
+		lang.LanguageEnglish: "Use to update or expire or revoke the connection",
 	},
 	TAGS: []string{
 		"",
@@ -75,8 +80,8 @@ func UpdateUserAppConnectionHTTP(st *achaemenid.Stream, httpReq *http.Request, h
 type updateUserAppConnectionReq struct {
 	ID [32]byte `json:",string"`
 
-	Status      datastore.UserAppsConnectionStatus
-	Description string
+	Status      datastore.UserAppConnectionStatus
+	Description string `valid:"text[0:50]"`
 	Weight      achaemenid.Weight
 
 	PublicKey     [32]byte `json:",string"`
@@ -84,18 +89,23 @@ type updateUserAppConnectionReq struct {
 }
 
 func updateUserAppConnection(st *achaemenid.Stream, req *updateUserAppConnectionReq) (err *er.Error) {
-	// Person user type can't delegate to update the connection
-	if st.Connection.UserType == achaemenid.UserTypePerson && st.Connection.DelegateUserType != achaemenid.UserTypeUnset {
-		err = authorization.ErrAuthorizationUserNotAllow
-		return
-	}
-
 	err = st.Authorize()
 	if err != nil {
 		return
 	}
+	// Validate data here due to service use internally by other services!
+	err = req.validator()
+	if err != nil {
+		return
+	}
 
-	var uac = datastore.UserAppsConnection{
+	// Person user type can't delegate to update the connection
+	if st.Connection.UserType == authorization.UserTypePerson && st.Connection.DelegateUserType != authorization.UserTypeUnset {
+		err = authorization.ErrUserNotAllow
+		return
+	}
+
+	var uac = datastore.UserAppConnection{
 		ID: req.ID,
 	}
 	err = uac.GetLastByID()
@@ -103,7 +113,7 @@ func updateUserAppConnection(st *achaemenid.Stream, req *updateUserAppConnection
 		return
 	}
 
-	if uac.Status == datastore.UserAppsConnectionExpired || uac.Status == datastore.UserAppsConnectionRevoked {
+	if uac.Status == datastore.UserAppConnectionExpired || uac.Status == datastore.UserAppConnectionRevoked {
 		// err =
 		return
 	}
@@ -119,6 +129,11 @@ func updateUserAppConnection(st *achaemenid.Stream, req *updateUserAppConnection
 	return
 }
 
+func (req *updateUserAppConnectionReq) validator() (err *er.Error) {
+	err = validators.ValidateText(req.Description, 0, 50)
+	return
+}
+
 /*
 	Request Encoders & Decoders
 */
@@ -130,7 +145,7 @@ func (req *updateUserAppConnectionReq) syllabDecoder(buf []byte) (err *er.Error)
 	}
 
 	copy(req.ID[:], buf[0:])
-	req.Status = datastore.UserAppsConnectionStatus(syllab.GetUInt8(buf, 32))
+	req.Status = datastore.UserAppConnectionStatus(syllab.GetUInt8(buf, 32))
 	req.Description = syllab.UnsafeGetString(buf, 33)
 	req.Weight = achaemenid.Weight(syllab.GetUInt8(buf, 41))
 	copy(req.PublicKey[:], buf[42:])
@@ -168,56 +183,31 @@ func (req *updateUserAppConnectionReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(5)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "ID":
 			err = decoder.DecodeByteArrayAsBase64(req.ID[:])
-			if err != nil {
-				return
-			}
-		case 'S':
-			decoder.SetFounded()
-			decoder.Offset(8)
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-			req.Status = datastore.UserAppsConnectionStatus(num)
-		case 'D':
-			decoder.SetFounded()
-			decoder.Offset(14)
-			req.Description = decoder.DecodeString()
-		case 'W':
-			decoder.SetFounded()
-			decoder.Offset(8)
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
+		case "Status":
+			var num uint8
+			num, err = decoder.DecodeUInt8()
+			req.Status = datastore.UserAppConnectionStatus(num)
+		case "Description":
+			req.Description, err = decoder.DecodeString()
+		case "Weight":
+			var num uint8
+			num, err = decoder.DecodeUInt8()
 			req.Weight = achaemenid.Weight(num)
-		case 'P':
-			decoder.SetFounded()
-			decoder.Offset(12)
+		case "PublicKey":
 			err = decoder.DecodeByteArrayAsBase64(req.PublicKey[:])
-			if err != nil {
-				return
-			}
-		case 'A':
-			decoder.SetFounded()
-			decoder.Offset(15)
-			decoder.Buf, err = req.AccessControl.JSONDecoder(decoder.Buf)
-			if err != nil {
-				return
-			}
+
+		case "AccessControl":
+			err = req.AccessControl.JSONDecoder(decoder)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -245,14 +235,14 @@ func (req *updateUserAppConnectionReq) jsonEncoder() (buf []byte) {
 	encoder.EncodeByteSliceAsBase64(req.PublicKey[:])
 
 	encoder.EncodeString(`","AccessControl":`)
-	encoder.Buf = req.AccessControl.JSONEncoder(encoder.Buf)
+	req.AccessControl.JSONEncoder(encoder)
 
 	encoder.EncodeByte('}')
 	return encoder.Buf
 }
 
 func (req *updateUserAppConnectionReq) jsonLen() (ln int) {
-	ln += len(req.Description) + req.AccessControl.JSONLen()
-	ln += 207
+	ln = len(req.Description) + req.AccessControl.JSONLen()
+	ln += 173
 	return
 }

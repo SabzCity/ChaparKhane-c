@@ -17,19 +17,22 @@ import (
 
 var getPersonNumberStatusService = achaemenid.Service{
 	ID:                365808761,
-	URI:               "", // API services can set like "/apis?365808761" but it is not efficient, find services by ID.
-	CRUD:              authorization.CRUDRead,
 	IssueDate:         1602742728,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
 
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDRead,
+		UserType: authorization.UserTypeAll,
+	},
+
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "GetPersonNumberStatus",
+		lang.LanguageEnglish: "GetPersonNumberStatus",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
 		"PersonNumber",
@@ -91,7 +94,7 @@ type getPersonNumberStatusRes struct {
 }
 
 func getPersonNumberStatus(st *achaemenid.Stream, req *getPersonNumberStatusReq) (res *getPersonNumberStatusRes, err *er.Error) {
-	if st.Connection.UserType == achaemenid.UserTypeGuest {
+	if st.Connection.UserType == authorization.UserTypeGuest {
 		// Prevent DDos attack by do some easy process for user e.g. captcha is not good way!
 		err = phraseCaptchas.Check(req.CaptchaID)
 		if err != nil {
@@ -104,10 +107,10 @@ func getPersonNumberStatus(st *achaemenid.Stream, req *getPersonNumberStatusReq)
 	}
 	err = pn.GetLastByNumber()
 	if err != nil {
-		if err == ganjine.ErrGanjineRecordNotFound {
+		if err.Equal(ganjine.ErrRecordNotFound) {
 			err = nil
 		} else {
-			err = ErrPlatformBadSituation
+			err = ErrBadSituation
 			return
 		}
 	}
@@ -142,27 +145,18 @@ func (req *getPersonNumberStatusReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'C':
-			decoder.SetFounded()
-			decoder.Offset(9 + 3)
-			err = decoder.DecodeByteArrayAsBase64(req.CaptchaID[:])
-			if err != nil {
-				return
-			}
-		case 'P':
-			decoder.SetFounded()
-			decoder.Offset(11 + 2)
-			req.PhoneNumber, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "CaptchaID":
+		err = decoder.DecodeByteArrayAsBase64(req.CaptchaID[:])
+		case "PhoneNumber":
+		req.PhoneNumber, err = decoder.DecodeUInt64()
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -205,6 +199,6 @@ func (res *getPersonNumberStatusRes) jsonEncoder() (buf []byte) {
 }
 
 func (res *getPersonNumberStatusRes) jsonLen() (ln int) {
-	ln = 43 + 3 + 25
+	ln = 71
 	return
 }

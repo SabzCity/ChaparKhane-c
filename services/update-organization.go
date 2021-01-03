@@ -29,10 +29,10 @@ var updateOrganizationService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Update Organization",
+		lang.LanguageEnglish: "Update Organization",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
 		"OrganizationAuthentication",
@@ -78,22 +78,14 @@ func UpdateOrganizationHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRe
 }
 
 type updateOrganizationReq struct {
-	LeaderPersonID        [32]byte `json:",string"`
-	ID                    [32]byte `json:",string"`
-	Name                  string   `valid:"OrgName"`
-	Domain                string   `valid:"Domain"`
-	FinancialCreditAmount int64
-	ThingID               [32]byte `json:",string"`
-	ServicesType          datastore.OrganizationAuthenticationType
-	Status                datastore.OrganizationAuthenticationStatus
+	ID           [32]byte `json:",string"`
+	SocietyID    [32]byte `json:",string"`
+	ServicesType datastore.OrganizationAuthenticationType
+
+	LeaderPersonID [32]byte `json:",string"` // not empty just if need to change leader and make new connection for this person as leader!s
 }
 
 func updateOrganization(st *achaemenid.Stream, req *updateOrganizationReq) (err *er.Error) {
-	if st.Connection.UserID != adminUserID {
-		err = authorization.ErrUserNotAllow
-		return
-	}
-
 	err = st.Authorize()
 	if err != nil {
 		return
@@ -107,7 +99,7 @@ func updateOrganization(st *achaemenid.Stream, req *updateOrganizationReq) (err 
 	var oa = datastore.OrganizationAuthentication{
 		ID: req.ID,
 	}
-	err = oa.GetLastByIDByHashIndex()
+	err = oa.GetLastByID()
 	if err != nil {
 		return
 	}
@@ -116,45 +108,29 @@ func updateOrganization(st *achaemenid.Stream, req *updateOrganizationReq) (err 
 		err = ErrBlockedByJustice
 		return
 	}
-
-	err = checkOrgName(st, req.Name)
-	if err != nil {
-		return
+	if req.SocietyID != oa.SocietyID {
+		oa.Status = datastore.OrganizationStatusTransferred
 	}
-	err = checkOrgDomain(st, req.Domain)
-	if err != nil {
-		return
-	}
-
-	var oldName = oa.Name
-	var oldDomain = oa.Domain
 
 	oa = datastore.OrganizationAuthentication{
-		AppInstanceID:         server.Nodes.LocalNode.InstanceID,
-		UserConnectionID:      st.Connection.ID,
-		ID:                    req.ID,
-		SocietyID:             oa.SocietyID,
-		Name:                  req.Name,
-		Domain:                req.Domain,
-		FinancialCreditAmount: req.FinancialCreditAmount,
-		ServicesType:          req.ServicesType,
-		Status:                req.Status,
+		AppInstanceID:    achaemenid.Server.Nodes.LocalNode.InstanceID,
+		UserConnectionID: st.Connection.ID,
+		ID:               req.ID,
+		SocietyID:        req.SocietyID,
+		QuiddityID:       oa.QuiddityID,
+		ServicesType:     req.ServicesType,
+		Status:           oa.Status,
 	}
 	err = oa.Set()
 	if err != nil {
 		return
 	}
-	oa.HashIndexRecordIDForID()
-	if req.Name != oldName {
-		oa.HashIndexIDForName()
-	}
-	if req.Domain != oldDomain && req.Domain != "" {
-		oa.HashIndexIDForDomain()
-	}
+	oa.IndexRecordIDForID()
+
 	if req.LeaderPersonID != [32]byte{} {
 		// make new connection for leader
-		var uac = datastore.UserAppsConnection{
-			Status:      datastore.UserAppsConnectionIssued,
+		var uac = datastore.UserAppConnection{
+			Status:      datastore.UserAppConnectionIssued,
 			Description: "Leader connection created in update organization",
 
 			ID: uuid.Random32Byte(),
@@ -188,38 +164,26 @@ func (req *updateOrganizationReq) syllabDecoder(buf []byte) (err *er.Error) {
 		return
 	}
 
-	copy(req.LeaderPersonID[:], buf[0:])
-	copy(req.ID[:], buf[32:])
-	req.Name = syllab.UnsafeGetString(buf, 64)
-	req.Domain = syllab.UnsafeGetString(buf, 72)
-	req.FinancialCreditAmount = syllab.GetInt64(buf, 80)
-	copy(req.ThingID[:], buf[88:])
-	req.ServicesType = datastore.OrganizationAuthenticationType(syllab.GetUInt8(buf, 120))
-	req.Status = datastore.OrganizationAuthenticationStatus(syllab.GetUInt8(buf, 121))
+	copy(req.ID[:], buf[0:])
+	copy(req.SocietyID[:], buf[32:])
+	req.ServicesType = datastore.OrganizationAuthenticationType(syllab.GetUInt8(buf, 64))
+	copy(req.LeaderPersonID[:], buf[65:])
 	return
 }
 
 func (req *updateOrganizationReq) syllabEncoder(buf []byte) {
-	var hsi uint32 = req.syllabStackLen() // Heap start index || Stack size!
-
-	copy(buf[0:], req.LeaderPersonID[:])
-	copy(buf[32:], req.ID[:])
-	hsi = syllab.SetString(buf, req.Name, 64, hsi)
-	hsi = syllab.SetString(buf, req.Domain, 72, hsi)
-	syllab.SetInt64(buf, 80, req.FinancialCreditAmount)
-	copy(buf[88:], req.ThingID[:])
-	syllab.SetUInt8(buf, 120, uint8(req.ServicesType))
-	syllab.SetUInt8(buf, 121, uint8(req.Status))
+	copy(buf[0:], req.ID[:])
+	copy(buf[32:], req.SocietyID[:])
+	syllab.SetUInt8(buf, 64, uint8(req.ServicesType))
+	copy(buf[65:], req.LeaderPersonID[:])
 	return
 }
 
 func (req *updateOrganizationReq) syllabStackLen() (ln uint32) {
-	return 122
+	return 97
 }
 
 func (req *updateOrganizationReq) syllabHeapLen() (ln uint32) {
-	ln += uint32(len(req.Name))
-	ln += uint32(len(req.Domain))
 	return
 }
 
@@ -231,70 +195,24 @@ func (req *updateOrganizationReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'L':
-			decoder.SetFounded()
-			decoder.Offset(17)
-			err = decoder.DecodeByteArrayAsBase64(req.LeaderPersonID[:])
-			if err != nil {
-				return
-			}
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(5)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "ID":
 			err = decoder.DecodeByteArrayAsBase64(req.ID[:])
-			if err != nil {
-				return
-			}
-		case 'N':
-			decoder.SetFounded()
-			decoder.Offset(7)
-			req.Name = decoder.DecodeString()
-		case 'D':
-			decoder.SetFounded()
-			decoder.Offset(9)
-			req.Domain = decoder.DecodeString()
-		case 'F':
-			decoder.SetFounded()
-			decoder.Offset(23)
-			req.FinancialCreditAmount, err = decoder.DecodeInt64()
-			if err != nil {
-				return
-			}
-		case 'T':
-			decoder.SetFounded()
-			decoder.Offset(10)
-			err = decoder.DecodeByteArrayAsBase64(req.ThingID[:])
-			if err != nil {
-				return
-			}
-		case 'S':
-			switch decoder.Buf[1] {
-			case 'e':
-				decoder.SetFounded()
-				decoder.Offset(14)
-				var num uint8
-				num, err = decoder.DecodeUInt8()
-				if err != nil {
-					return
-				}
-				req.ServicesType = datastore.OrganizationAuthenticationType(num)
-			case 't':
-				decoder.SetFounded()
-				decoder.Offset(8)
-				var num uint8
-				num, err = decoder.DecodeUInt8()
-				if err != nil {
-					return
-				}
-				req.Status = datastore.OrganizationAuthenticationStatus(num)
-			}
+		case "SocietyID":
+			err = decoder.DecodeByteArrayAsBase64(req.SocietyID[:])
+		case "ServicesType":
+			var num uint8
+			num, err = decoder.DecodeUInt8()
+			req.ServicesType = datastore.OrganizationAuthenticationType(num)
+		case "LeaderPersonID":
+			err = decoder.DecodeByteArrayAsBase64(req.LeaderPersonID[:])
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -306,36 +224,23 @@ func (req *updateOrganizationReq) jsonEncoder() (buf []byte) {
 		Buf: make([]byte, 0, req.jsonLen()),
 	}
 
-	encoder.EncodeString(`{"LeaderPersonID":"`)
-	encoder.EncodeByteSliceAsBase64(req.LeaderPersonID[:])
-
-	encoder.EncodeString(`","ID":"`)
+	encoder.EncodeString(`{"ID":"`)
 	encoder.EncodeByteSliceAsBase64(req.ID[:])
 
-	encoder.EncodeString(`","Name":"`)
-	encoder.EncodeString(req.Name)
-
-	encoder.EncodeString(`","Domain":"`)
-	encoder.EncodeString(req.Domain)
-
-	encoder.EncodeString(`","FinancialCreditAmount":`)
-	encoder.EncodeInt64(req.FinancialCreditAmount)
-
-	encoder.EncodeString(`,"ThingID":"`)
-	encoder.EncodeByteSliceAsBase64(req.ThingID[:])
+	encoder.EncodeString(`","SocietyID":"`)
+	encoder.EncodeByteSliceAsBase64(req.SocietyID[:])
 
 	encoder.EncodeString(`","ServicesType":`)
 	encoder.EncodeUInt8(uint8(req.ServicesType))
 
-	encoder.EncodeString(`,"Status":`)
-	encoder.EncodeUInt8(uint8(req.Status))
+	encoder.EncodeString(`,"LeaderPersonID":"`)
+	encoder.EncodeByteSliceAsBase64(req.LeaderPersonID[:])
 
-	encoder.EncodeByte('}')
+	encoder.EncodeString(`"}`)
 	return encoder.Buf
 }
 
 func (req *updateOrganizationReq) jsonLen() (ln int) {
-	ln = len(req.Name) + len(req.Domain)
-	ln += 280
+	ln = 192
 	return
 }

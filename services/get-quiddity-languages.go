@@ -16,8 +16,8 @@ import (
 	"../libgo/syllab"
 )
 
-var getWikiLanguagesService = achaemenid.Service{
-	ID:                183294015,
+var getQuiddityLanguagesService = achaemenid.Service{
+	ID:                3158400636,
 	IssueDate:         1605106959,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
@@ -30,29 +30,29 @@ var getWikiLanguagesService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Get Wiki Languages",
+		lang.LanguageEnglish: "Get Quiddity Languages",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
-		"Wiki",
+		"Quiddity",
 	},
 
-	SRPCHandler: GetWikiLanguagesSRPC,
-	HTTPHandler: GetWikiLanguagesHTTP,
+	SRPCHandler: GetQuiddityLanguagesSRPC,
+	HTTPHandler: GetQuiddityLanguagesHTTP,
 }
 
-// GetWikiLanguagesSRPC is sRPC handler of GetWikiLanguages service.
-func GetWikiLanguagesSRPC(st *achaemenid.Stream) {
-	var req = &getWikiLanguagesReq{}
+// GetQuiddityLanguagesSRPC is sRPC handler of GetQuiddityLanguages service.
+func GetQuiddityLanguagesSRPC(st *achaemenid.Stream) {
+	var req = &getQuiddityLanguagesReq{}
 	st.Err = req.syllabDecoder(srpc.GetPayload(st.IncomePayload))
 	if st.Err != nil {
 		return
 	}
 
-	var res *getWikiLanguagesRes
-	res, st.Err = getWikiLanguages(st, req)
+	var res *getQuiddityLanguagesRes
+	res, st.Err = getQuiddityLanguages(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		return
@@ -62,17 +62,17 @@ func GetWikiLanguagesSRPC(st *achaemenid.Stream) {
 	res.syllabEncoder(srpc.GetPayload(st.OutcomePayload))
 }
 
-// GetWikiLanguagesHTTP is HTTP handler of GetWikiLanguages service.
-func GetWikiLanguagesHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
-	var req = &getWikiLanguagesReq{}
+// GetQuiddityLanguagesHTTP is HTTP handler of GetQuiddityLanguages service.
+func GetQuiddityLanguagesHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
+	var req = &getQuiddityLanguagesReq{}
 	st.Err = req.jsonDecoder(httpReq.Body)
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
-	var res *getWikiLanguagesRes
-	res, st.Err = getWikiLanguages(st, req)
+	var res *getQuiddityLanguagesRes
+	res, st.Err = getQuiddityLanguages(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
@@ -84,24 +84,20 @@ func GetWikiLanguagesHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes 
 	httpRes.Body = res.jsonEncoder()
 }
 
-type getWikiLanguagesReq struct {
+type getQuiddityLanguagesReq struct {
 	ID [32]byte `json:",string"`
 }
 
-type getWikiLanguagesRes struct {
+type getQuiddityLanguagesRes struct {
 	Languages []lang.Language
 }
 
-func getWikiLanguages(st *achaemenid.Stream, req *getWikiLanguagesReq) (res *getWikiLanguagesRes, err *er.Error) {
-	var w = datastore.Wiki{
+func getQuiddityLanguages(st *achaemenid.Stream, req *getQuiddityLanguagesReq) (res *getQuiddityLanguagesRes, err *er.Error) {
+	var w = datastore.Quiddity{
 		ID: req.ID,
 	}
-	res = &getWikiLanguagesRes{}
-	res.Languages, err = w.GetLanguagesByIDByHashIndex(0, 100)
-	return
-}
-
-func (req *getWikiLanguagesReq) validator() (err *er.Error) {
+	res = &getQuiddityLanguagesRes{}
+	res.Languages, err = w.FindLanguagesByID(0, 100)
 	return
 }
 
@@ -109,7 +105,7 @@ func (req *getWikiLanguagesReq) validator() (err *er.Error) {
 	Request Encoders & Decoders
 */
 
-func (req *getWikiLanguagesReq) syllabDecoder(buf []byte) (err *er.Error) {
+func (req *getQuiddityLanguagesReq) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < req.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -119,48 +115,44 @@ func (req *getWikiLanguagesReq) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (req *getWikiLanguagesReq) syllabEncoder(buf []byte) {
+func (req *getQuiddityLanguagesReq) syllabEncoder(buf []byte) {
 	copy(buf[0:], req.ID[:])
 	return
 }
 
-func (req *getWikiLanguagesReq) syllabStackLen() (ln uint32) {
+func (req *getQuiddityLanguagesReq) syllabStackLen() (ln uint32) {
 	return 32
 }
 
-func (req *getWikiLanguagesReq) syllabHeapLen() (ln uint32) {
+func (req *getQuiddityLanguagesReq) syllabHeapLen() (ln uint32) {
 	return
 }
 
-func (req *getWikiLanguagesReq) syllabLen() (ln int) {
+func (req *getQuiddityLanguagesReq) syllabLen() (ln int) {
 	return int(req.syllabStackLen() + req.syllabHeapLen())
 }
 
-func (req *getWikiLanguagesReq) jsonDecoder(buf []byte) (err *er.Error) {
+func (req *getQuiddityLanguagesReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(5)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "ID":
 			err = decoder.DecodeByteArrayAsBase64(req.ID[:])
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
 	return
 }
 
-func (req *getWikiLanguagesReq) jsonEncoder() (buf []byte) {
+func (req *getQuiddityLanguagesReq) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, req.jsonLen()),
 	}
@@ -172,7 +164,7 @@ func (req *getWikiLanguagesReq) jsonEncoder() (buf []byte) {
 	return encoder.Buf
 }
 
-func (req *getWikiLanguagesReq) jsonLen() (ln int) {
+func (req *getQuiddityLanguagesReq) jsonLen() (ln int) {
 	ln = 52
 	return
 }
@@ -181,7 +173,7 @@ func (req *getWikiLanguagesReq) jsonLen() (ln int) {
 	Response Encoders & Decoders
 */
 
-func (res *getWikiLanguagesRes) syllabDecoder(buf []byte) (err *er.Error) {
+func (res *getQuiddityLanguagesRes) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < res.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -193,7 +185,7 @@ func (res *getWikiLanguagesRes) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (res *getWikiLanguagesRes) syllabEncoder(buf []byte) {
+func (res *getQuiddityLanguagesRes) syllabEncoder(buf []byte) {
 	var hsi uint32 = res.syllabStackLen() // Heap start index || Stack size!
 
 	var ln = uint32(len(res.Languages))
@@ -204,29 +196,27 @@ func (res *getWikiLanguagesRes) syllabEncoder(buf []byte) {
 	return
 }
 
-func (res *getWikiLanguagesRes) syllabStackLen() (ln uint32) {
+func (res *getQuiddityLanguagesRes) syllabStackLen() (ln uint32) {
 	return 8
 }
 
-func (res *getWikiLanguagesRes) syllabHeapLen() (ln uint32) {
+func (res *getQuiddityLanguagesRes) syllabHeapLen() (ln uint32) {
 	ln += uint32(len(res.Languages) * 4)
 	return
 }
 
-func (res *getWikiLanguagesRes) syllabLen() (ln int) {
+func (res *getQuiddityLanguagesRes) syllabLen() (ln int) {
 	return int(res.syllabStackLen() + res.syllabHeapLen())
 }
 
-func (res *getWikiLanguagesRes) jsonDecoder(buf []byte) (err *er.Error) {
+func (res *getQuiddityLanguagesRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'L':
-			decoder.SetFounded()
-			decoder.Offset(12)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "Languages":
 			var num uint32
 			res.Languages = make([]lang.Language, 0, 8) // TODO::: Is cap efficient enough?
 			for !decoder.CheckToken(']') {
@@ -239,15 +229,14 @@ func (res *getWikiLanguagesRes) jsonDecoder(buf []byte) (err *er.Error) {
 			}
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
 	return
 }
 
-func (res *getWikiLanguagesRes) jsonEncoder() (buf []byte) {
+func (res *getQuiddityLanguagesRes) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, res.jsonLen()),
 	}
@@ -264,7 +253,7 @@ func (res *getWikiLanguagesRes) jsonEncoder() (buf []byte) {
 	return encoder.Buf
 }
 
-func (res *getWikiLanguagesRes) jsonLen() (ln int) {
+func (res *getQuiddityLanguagesRes) jsonLen() (ln int) {
 	ln = (len(res.Languages) * 11)
 	ln += 16
 	return

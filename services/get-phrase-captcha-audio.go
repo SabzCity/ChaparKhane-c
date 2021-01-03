@@ -23,10 +23,10 @@ var getPhraseCaptchaAudioService = achaemenid.Service{
 	Status:            achaemenid.ServiceStatePreAlpha,
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "GetPhraseCaptchaAudio",
+		lang.LanguageEnglish: "GetPhraseCaptchaAudio",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
 		"Authentication",
@@ -119,38 +119,24 @@ func (req *getPhraseCaptchaAudioReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'C':
-			decoder.SetFounded()
-			decoder.Offset(12)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "CaptchaID":
 			err = decoder.DecodeByteArrayAsBase64(req.CaptchaID[:])
-			if err != nil {
-				return
-			}
-		case 'L':
-			decoder.SetFounded()
-			decoder.Offset(10)
-			var num uint8
-			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
+		case "Language":
+			var num uint32
+			num, err = decoder.DecodeUInt32()
 			req.Language = lang.Language(num)
-		case 'A':
-			decoder.SetFounded()
-			decoder.Offset(13)
+		case "AudioFormat":
 			var num uint8
 			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
 			req.AudioFormat = captcha.AudioFormat(num)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -191,7 +177,7 @@ func (res *getPhraseCaptchaAudioRes) jsonEncoder() (buf []byte) {
 }
 
 func (res *getPhraseCaptchaAudioRes) jsonLen() (ln int) {
-	ln += (len(res.Audio)*8 + 5) / 6
+	ln = ((len(res.Audio)*8 + 5) / 6)
 	ln += 12
 	return
 }

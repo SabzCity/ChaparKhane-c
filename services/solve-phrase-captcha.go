@@ -22,10 +22,10 @@ var solvePhraseCaptchaService = achaemenid.Service{
 	Status:            achaemenid.ServiceStatePreAlpha,
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "SolvePhraseCaptcha",
+		lang.LanguageEnglish: "SolvePhraseCaptcha",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: `Solve the number captcha by give specific ID and answer
+		lang.LanguageEnglish: `Solve the number captcha by give specific ID and answer
 and use captcha ID for any request need it until captcha expire in 2 minute`,
 	},
 	TAGS: []string{
@@ -76,6 +76,10 @@ func solvePhraseCaptcha(st *achaemenid.Stream, req *solvePhraseCaptchaReq) (err 
 	return
 }
 
+/*
+	Request Encoders & Decoders
+*/
+
 func (req *solvePhraseCaptchaReq) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < req.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
@@ -87,34 +91,66 @@ func (req *solvePhraseCaptchaReq) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
+func (req *solvePhraseCaptchaReq) syllabEncoder(buf []byte) {
+	var hsi uint32 = req.syllabStackLen() // Heap start index || Stack size!
+
+	copy(buf[0:], req.CaptchaID[:])
+	hsi = syllab.SetString(buf, req.Answer, 16, hsi)
+	return
+}
+
 func (req *solvePhraseCaptchaReq) syllabStackLen() (ln uint32) {
 	return 24
+}
+
+func (req *solvePhraseCaptchaReq) syllabHeapLen() (ln uint32) {
+	ln += uint32(len(req.Answer))
+	return
+}
+
+func (req *solvePhraseCaptchaReq) syllabLen() (ln int) {
+	return int(req.syllabStackLen() + req.syllabHeapLen())
 }
 
 func (req *solvePhraseCaptchaReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'C':
-			decoder.SetFounded()
-			decoder.Offset(9 + 3)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "CaptchaID":
 			err = decoder.DecodeByteArrayAsBase64(req.CaptchaID[:])
-			if err != nil {
-				return
-			}
-		case 'A':
-			decoder.SetFounded()
-			decoder.Offset(6 + 3)
-			req.Answer = decoder.DecodeString()
+		case "Answer":
+			req.Answer, err = decoder.DecodeString()
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
+	return
+}
+
+func (req *solvePhraseCaptchaReq) jsonEncoder() (buf []byte) {
+	var encoder = json.Encoder{
+		Buf: make([]byte, 0, req.jsonLen()),
+	}
+
+	encoder.EncodeString(`{"CaptchaID":"`)
+	encoder.EncodeByteSliceAsBase64(req.CaptchaID[:])
+
+	encoder.EncodeString(`","Answer":"`)
+	encoder.EncodeString(req.Answer)
+
+	encoder.EncodeString(`"}`)
+	return encoder.Buf
+}
+
+func (req *solvePhraseCaptchaReq) jsonLen() (ln int) {
+	ln = len(req.Answer)
+	ln += 50
 	return
 }

@@ -15,7 +15,7 @@ import (
 )
 
 var findProductAuctionByOrgIDService = achaemenid.Service{
-	ID:                27143932,
+	ID:                988810804,
 	IssueDate:         1605376667,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
@@ -28,10 +28,10 @@ var findProductAuctionByOrgIDService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Find Product Auction By Org ID",
+		lang.LanguageEnglish: "Find Product Auction By Org ID",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
 		"ProductAuction",
@@ -97,7 +97,7 @@ func findProductAuctionByOrgID(st *achaemenid.Stream, req *findProductAuctionByO
 		OrgID: req.OrgID,
 	}
 	var indexRes [][32]byte
-	indexRes, err = pa.FindIDsByOrgIDByHashIndex(req.Offset, req.Limit)
+	indexRes, err = pa.FindIDsByOrgID(req.Offset, req.Limit)
 	if err != nil {
 		return
 	}
@@ -147,34 +147,20 @@ func (req *findProductAuctionByOrgIDReq) jsonDecoder(buf []byte) (err *er.Error)
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[1] {
-		case 'r':
-			decoder.SetFounded()
-			decoder.Offset(8)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "OrgID":
 			err = decoder.DecodeByteArrayAsBase64(req.OrgID[:])
-			if err != nil {
-				return
-			}
-		case 'f':
-			decoder.SetFounded()
-			decoder.Offset(8)
+		case "Offset":
 			req.Offset, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-		case 'i':
-			decoder.SetFounded()
-			decoder.Offset(7)
+		case "Limit":
 			req.Limit, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -200,7 +186,7 @@ func (req *findProductAuctionByOrgIDReq) jsonEncoder() (buf []byte) {
 }
 
 func (req *findProductAuctionByOrgIDReq) jsonLen() (ln int) {
-	ln = 116
+	ln = 114
 	return
 }
 
@@ -242,20 +228,16 @@ func (res *findProductAuctionByOrgIDRes) jsonDecoder(buf []byte) (err *er.Error)
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(6)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "IDs":
 			res.IDs, err = decoder.Decode32ByteArraySliceAsBase64()
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}

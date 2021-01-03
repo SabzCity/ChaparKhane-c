@@ -16,19 +16,22 @@ import (
 
 var getNewPhraseCaptchaService = achaemenid.Service{
 	ID:                2701809032,
-	URI:               "", // API services can set like "/apis?2701809032" but it is not efficient, find services by ID.
-	CRUD:              authorization.CRUDRead,
 	IssueDate:         1593013452,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "",
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
 
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDRead,
+		UserType: authorization.UserTypeAll,
+	},
+
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "GetNewPhraseCaptcha",
+		lang.LanguageEnglish: "GetNewPhraseCaptcha",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "returns new phrase captcha challenge that expire in 4 minute",
+		lang.LanguageEnglish: "returns new phrase captcha challenge that expire in 4 minute",
 	},
 	TAGS: []string{
 		"Authentication",
@@ -98,6 +101,10 @@ func getNewPhraseCaptcha(st *achaemenid.Stream, req *getNewPhraseCaptchaReq) (re
 	return
 }
 
+/*
+	Request Encoders & Decoders
+*/
+
 func (req *getNewPhraseCaptchaReq) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < req.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
@@ -109,8 +116,22 @@ func (req *getNewPhraseCaptchaReq) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
+func (req *getNewPhraseCaptchaReq) syllabEncoder(buf []byte) {
+	syllab.SetUInt32(buf, 0, uint32(req.Language))
+	syllab.SetUInt8(buf, 4, uint8(req.ImageFormat))
+	return
+}
+
 func (req *getNewPhraseCaptchaReq) syllabStackLen() (ln uint32) {
-	return 2
+	return 5
+}
+
+func (req *getNewPhraseCaptchaReq) syllabHeapLen() (ln uint32) {
+	return
+}
+
+func (req *getNewPhraseCaptchaReq) syllabLen() (ln int) {
+	return int(req.syllabStackLen() + req.syllabHeapLen())
 }
 
 // jsonDecoder decode minifed version as {"Language":0,"ImageFormat":0}
@@ -118,34 +139,59 @@ func (req *getNewPhraseCaptchaReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'L':
-			decoder.SetFounded()
-			decoder.Offset(10)
-			var num uint8
-			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "Language":
+			var num uint32
+			num, err = decoder.DecodeUInt32()
 			req.Language = lang.Language(num)
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(13)
+		case "ImageFormat":
 			var num uint8
 			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
 			req.ImageFormat = captcha.ImageFormat(num)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
+	return
+}
+func (req *getNewPhraseCaptchaReq) jsonEncoder() (buf []byte) {
+	var encoder = json.Encoder{
+		Buf: make([]byte, 0, req.jsonLen()),
+	}
+
+	encoder.EncodeString(`{"Language":`)
+	encoder.EncodeUInt8(uint8(req.Language))
+
+	encoder.EncodeString(`,"ImageFormat":`)
+	encoder.EncodeUInt8(uint8(req.ImageFormat))
+
+	encoder.EncodeByte('}')
+	return encoder.Buf
+}
+
+func (req *getNewPhraseCaptchaReq) jsonLen() (ln int) {
+	ln = 34
+	return
+}
+
+/*
+	Response Encoders & Decoders
+*/
+
+func (res *getNewPhraseCaptchaRes) syllabDecoder(buf []byte) (err *er.Error) {
+	if uint32(len(buf)) < res.syllabStackLen() {
+		err = syllab.ErrSyllabDecodeSmallSlice
+		return
+	}
+
+	copy(res.CaptchaID[:], buf[0:])
+	res.Image = syllab.UnsafeGetByteArray(buf, 16)
 	return
 }
 
@@ -153,7 +199,8 @@ func (res *getNewPhraseCaptchaRes) syllabEncoder(buf []byte) {
 	var hsi uint32 = res.syllabStackLen() // Heap start index || Stack size!
 
 	copy(buf[0:], res.CaptchaID[:])
-	syllab.SetByteArray(buf, res.Image, 16, hsi)
+	hsi = syllab.SetByteArray(buf, res.Image, 16, hsi)
+	return
 }
 
 func (res *getNewPhraseCaptchaRes) syllabStackLen() (ln uint32) {
@@ -167,6 +214,28 @@ func (res *getNewPhraseCaptchaRes) syllabHeapLen() (ln uint32) {
 
 func (res *getNewPhraseCaptchaRes) syllabLen() (ln int) {
 	return int(res.syllabStackLen() + res.syllabHeapLen())
+}
+
+func (res *getNewPhraseCaptchaRes) jsonDecoder(buf []byte) (err *er.Error) {
+	var decoder = json.DecoderUnsafeMinifed{
+		Buf: buf,
+	}
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "CaptchaID":
+			err = decoder.DecodeByteArrayAsBase64(res.CaptchaID[:])
+		case "Image":
+			res.Image, err = decoder.DecodeByteSliceAsBase64()
+		default:
+			err = decoder.NotFoundKeyStrict()
+		}
+
+		if len(decoder.Buf) < 3 {
+			return
+		}
+	}
+	return
 }
 
 func (res *getNewPhraseCaptchaRes) jsonEncoder() []byte {
@@ -185,7 +254,7 @@ func (res *getNewPhraseCaptchaRes) jsonEncoder() []byte {
 }
 
 func (res *getNewPhraseCaptchaRes) jsonLen() (ln int) {
-	ln += ((len(res.Image)*8 + 5) / 6)
+	ln = ((len(res.Image)*8 + 5) / 6)
 	ln += 49
 	return
 }

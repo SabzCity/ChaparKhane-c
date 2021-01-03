@@ -28,10 +28,10 @@ var getPersonStatusService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Get Person Status",
+		lang.LanguageEnglish: "Get Person Status",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
 		"PersonAuthentication",
@@ -154,20 +154,16 @@ func (req *getPersonStatusReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'P':
-			decoder.SetFounded()
-			decoder.Offset(11)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "PersonID":
 			err = decoder.DecodeByteArrayAsBase64(req.PersonID[:])
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -187,8 +183,7 @@ func (req *getPersonStatusReq) jsonEncoder() (buf []byte) {
 }
 
 func (req *getPersonStatusReq) jsonLen() (ln int) {
-	ln += 0
-	ln += 58
+	ln = 58
 	return
 }
 
@@ -233,43 +228,24 @@ func (res *getPersonStatusRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'A':
-			decoder.SetFounded()
-			decoder.Offset(16)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "AppInstanceID":
 			err = decoder.DecodeByteArrayAsBase64(res.AppInstanceID[:])
-			if err != nil {
-				return
-			}
-		case 'U':
-			decoder.SetFounded()
-			decoder.Offset(19)
+		case "UserConnectionID":
 			err = decoder.DecodeByteArrayAsBase64(res.UserConnectionID[:])
-			if err != nil {
-				return
-			}
-		case 'R':
-			decoder.SetFounded()
-			decoder.Offset(19)
+		case "ReferentPersonID":
 			err = decoder.DecodeByteArrayAsBase64(res.ReferentPersonID[:])
-			if err != nil {
-				return
-			}
-		case 'S':
-			decoder.SetFounded()
-			decoder.Offset(8)
+		case "Status":
 			var num uint8
 			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
 			res.Status = datastore.PersonAuthenticationStatus(num)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}

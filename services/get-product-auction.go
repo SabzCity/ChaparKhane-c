@@ -12,7 +12,6 @@ import (
 	"../libgo/json"
 	lang "../libgo/language"
 	"../libgo/math"
-	"../libgo/price"
 	"../libgo/srpc"
 	"../libgo/syllab"
 )
@@ -31,10 +30,10 @@ var getProductAuctionService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Get Product Auction",
+		lang.LanguageEnglish: "Get Product Auction",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
 		"ProductAuction",
@@ -94,24 +93,15 @@ type getProductAuctionRes struct {
 	AppInstanceID    [32]byte `json:",string"`
 	UserConnectionID [32]byte `json:",string"`
 	OrgID            [32]byte `json:",string"`
-	WikiID           [32]byte `json:",string"`
+	QuiddityID       [32]byte `json:",string"`
 
 	// Price
-	Currency                     price.Currency
-	SuggestPrice                 price.Amount
-	DistributionCenterCommission math.PerMyriad
-	SellerCommission             math.PerMyriad
-	Discount                     math.PerMyriad
-	PayablePrice                 price.Amount
+	Discount         math.PerMyriad
+	DCCommission     math.PerMyriad
+	SellerCommission math.PerMyriad
 
 	// Authorization
-	DistributionCenterID [32]byte `json:",string"`
-	GroupID              [32]byte `json:",string"`
-	MinNumBuy            uint64
-	StockNumber          uint64
-	LiveUntil            etime.Time
-	AllowWeekdays        etime.Weekdays
-	AllowDayhours        etime.Dayhours
+	Authorization authorization.Product
 
 	Description string
 	Type        datastore.ProductAuctionType
@@ -122,7 +112,7 @@ func getProductAuction(st *achaemenid.Stream, req *getProductAuctionReq) (res *g
 	var pa = datastore.ProductAuction{
 		ID: req.ID,
 	}
-	err = pa.GetLastByIDByHashIndex()
+	err = pa.GetLastByID()
 	if err != nil {
 		return
 	}
@@ -133,24 +123,15 @@ func getProductAuction(st *achaemenid.Stream, req *getProductAuctionReq) (res *g
 		AppInstanceID:    pa.AppInstanceID,
 		UserConnectionID: pa.UserConnectionID,
 		OrgID:            pa.OrgID,
-		WikiID:           pa.WikiID,
+		QuiddityID:       pa.QuiddityID,
 
 		// Price
-		Currency:                     pa.Currency,
-		SuggestPrice:                 pa.SuggestPrice,
-		DistributionCenterCommission: pa.DistributionCenterCommission,
-		SellerCommission:             pa.SellerCommission,
-		Discount:                     pa.Discount,
-		PayablePrice:                 pa.PayablePrice,
+		Discount:         pa.Discount,
+		DCCommission:     pa.DCCommission,
+		SellerCommission: pa.SellerCommission,
 
 		// Authorization
-		DistributionCenterID: pa.DistributionCenterID,
-		GroupID:              pa.GroupID,
-		MinNumBuy:            pa.MinNumBuy,
-		StockNumber:          pa.StockNumber,
-		LiveUntil:            pa.LiveUntil,
-		AllowWeekdays:        pa.AllowWeekdays,
-		AllowDayhours:        pa.AllowDayhours,
+		Authorization: pa.Authorization,
 
 		Description: pa.Description,
 		Type:        pa.Type,
@@ -164,6 +145,9 @@ func getProductAuction(st *achaemenid.Stream, req *getProductAuctionReq) (res *g
 */
 
 func (req *getProductAuctionReq) syllabDecoder(buf []byte) (err *er.Error) {
+	// var add, ln uint32
+	// var tempSlice []byte
+
 	if uint32(len(buf)) < req.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -194,22 +178,16 @@ func (req *getProductAuctionReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	var keyName string
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		keyName = decoder.DecodeKey()
+	for err == nil {
+		var keyName = decoder.DecodeKey()
 		switch keyName {
 		case "ID":
-			decoder.SetFounded()
-			decoder.Offset(1)
 			err = decoder.DecodeByteArrayAsBase64(req.ID[:])
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -247,26 +225,17 @@ func (res *getProductAuctionRes) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(res.AppInstanceID[:], buf[8:])
 	copy(res.UserConnectionID[:], buf[40:])
 	copy(res.OrgID[:], buf[72:])
-	copy(res.WikiID[:], buf[104:])
+	copy(res.QuiddityID[:], buf[104:])
 
-	res.Currency = price.Currency(syllab.GetUInt16(buf, 136))
-	res.SuggestPrice = price.Amount(syllab.GetUInt64(buf, 138))
-	res.DistributionCenterCommission = math.PerMyriad(syllab.GetUInt16(buf, 146))
-	res.SellerCommission = math.PerMyriad(syllab.GetUInt16(buf, 148))
-	res.Discount = math.PerMyriad(syllab.GetUInt16(buf, 150))
-	res.PayablePrice = price.Amount(syllab.GetUInt64(buf, 152))
+	res.Discount = math.PerMyriad(syllab.GetUInt16(buf, 136))
+	res.DCCommission = math.PerMyriad(syllab.GetUInt16(buf, 138))
+	res.SellerCommission = math.PerMyriad(syllab.GetUInt16(buf, 140))
 
-	copy(res.DistributionCenterID[:], buf[160:])
-	copy(res.GroupID[:], buf[192:])
-	res.MinNumBuy = syllab.GetUInt64(buf, 224)
-	res.StockNumber = syllab.GetUInt64(buf, 232)
-	res.LiveUntil = etime.Time(syllab.GetInt64(buf, 240))
-	res.AllowWeekdays = etime.Weekdays(syllab.GetUInt8(buf, 248))
-	res.AllowDayhours = etime.Dayhours(syllab.GetUInt32(buf, 249))
+	res.Authorization.SyllabDecoder(buf, 142)
 
-	res.Description = syllab.UnsafeGetString(buf, 253)
-	res.Type = datastore.ProductAuctionType(syllab.GetUInt8(buf, 261))
-	res.Status = datastore.ProductAuctionStatus(syllab.GetUInt8(buf, 262))
+	res.Description = syllab.UnsafeGetString(buf, 142+res.Authorization.SyllabStackLen())
+	res.Type = datastore.ProductAuctionType(syllab.GetUInt8(buf, 150+res.Authorization.SyllabStackLen()))
+	res.Status = datastore.ProductAuctionStatus(syllab.GetUInt8(buf, 151+res.Authorization.SyllabStackLen()))
 	return
 }
 
@@ -277,34 +246,26 @@ func (res *getProductAuctionRes) syllabEncoder(buf []byte) {
 	copy(buf[8:], res.AppInstanceID[:])
 	copy(buf[40:], res.UserConnectionID[:])
 	copy(buf[72:], res.OrgID[:])
-	copy(buf[104:], res.WikiID[:])
+	copy(buf[104:], res.QuiddityID[:])
 
-	syllab.SetUInt16(buf, 136, uint16(res.Currency))
-	syllab.SetUInt64(buf, 138, uint64(res.SuggestPrice))
-	syllab.SetUInt16(buf, 146, uint16(res.DistributionCenterCommission))
-	syllab.SetUInt16(buf, 148, uint16(res.SellerCommission))
-	syllab.SetUInt16(buf, 150, uint16(res.Discount))
-	syllab.SetUInt64(buf, 152, uint64(res.PayablePrice))
+	syllab.SetUInt16(buf, 136, uint16(res.Discount))
+	syllab.SetUInt16(buf, 138, uint16(res.DCCommission))
+	syllab.SetUInt16(buf, 140, uint16(res.SellerCommission))
 
-	copy(buf[160:], res.DistributionCenterID[:])
-	copy(buf[192:], res.GroupID[:])
-	syllab.SetUInt64(buf, 224, res.MinNumBuy)
-	syllab.SetUInt64(buf, 232, res.StockNumber)
-	syllab.SetInt64(buf, 240, int64(res.LiveUntil))
-	syllab.SetUInt8(buf, 248, uint8(res.AllowWeekdays))
-	syllab.SetUInt32(buf, 249, uint32(res.AllowDayhours))
+	hsi = res.Authorization.SyllabEncoder(buf, 142, hsi)
 
-	hsi = syllab.SetString(buf, res.Description, 253, hsi)
-	syllab.SetUInt8(buf, 261, uint8(res.Type))
-	syllab.SetUInt8(buf, 262, uint8(res.Status))
+	hsi = syllab.SetString(buf, res.Description, 142+res.Authorization.SyllabStackLen(), hsi)
+	syllab.SetUInt8(buf, 150+res.Authorization.SyllabStackLen(), uint8(res.Type))
+	syllab.SetUInt8(buf, 151+res.Authorization.SyllabStackLen(), uint8(res.Status))
 	return
 }
 
 func (res *getProductAuctionRes) syllabStackLen() (ln uint32) {
-	return 263
+	return 152 + res.Authorization.SyllabStackLen()
 }
 
 func (res *getProductAuctionRes) syllabHeapLen() (ln uint32) {
+	ln += res.Authorization.SyllabHeapLen()
 	ln += uint32(len(res.Description))
 	return
 }
@@ -317,169 +278,53 @@ func (res *getProductAuctionRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	var keyName string
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		keyName = decoder.DecodeKey()
+	for err == nil {
+		var keyName = decoder.DecodeKey()
 		switch keyName {
 		case "WriteTime":
-			decoder.SetFounded()
 			var num int64
 			num, err = decoder.DecodeInt64()
-			if err != nil {
-				return
-			}
 			res.WriteTime = etime.Time(num)
 		case "AppInstanceID":
-			decoder.SetFounded()
-			decoder.Offset(1)
 			err = decoder.DecodeByteArrayAsBase64(res.AppInstanceID[:])
-			if err != nil {
-				return
-			}
 		case "UserConnectionID":
-			decoder.SetFounded()
-			decoder.Offset(1)
 			err = decoder.DecodeByteArrayAsBase64(res.UserConnectionID[:])
-			if err != nil {
-				return
-			}
 		case "OrgID":
-			decoder.SetFounded()
-			decoder.Offset(1)
 			err = decoder.DecodeByteArrayAsBase64(res.OrgID[:])
-			if err != nil {
-				return
-			}
-		case "WikiID":
-			decoder.SetFounded()
-			decoder.Offset(1)
-			err = decoder.DecodeByteArrayAsBase64(res.WikiID[:])
-			if err != nil {
-				return
-			}
-		case "Currency":
-			decoder.SetFounded()
+		case "QuiddityID":
+			err = decoder.DecodeByteArrayAsBase64(res.QuiddityID[:])
+
+		case "Discount":
 			var num uint16
 			num, err = decoder.DecodeUInt16()
-			if err != nil {
-				return
-			}
-			res.Currency = price.Currency(num)
-		case "SuggestPrice":
-			decoder.SetFounded()
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			res.SuggestPrice = price.Amount(num)
-			if err != nil {
-				return
-			}
-		case "DistributionCenterCommission":
-			decoder.SetFounded()
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-			res.DistributionCenterCommission = math.PerMyriad(num)
-		case "SellerCommission":
-			decoder.SetFounded()
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-			res.SellerCommission = math.PerMyriad(num)
-		case "Discount":
-			decoder.SetFounded()
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
 			res.Discount = math.PerMyriad(num)
-		case "PayablePrice":
-			decoder.SetFounded()
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			res.PayablePrice = price.Amount(num)
-			if err != nil {
-				return
-			}
-		case "DistributionCenterID":
-			decoder.SetFounded()
-			decoder.Offset(1)
-			err = decoder.DecodeByteArrayAsBase64(res.DistributionCenterID[:])
-			if err != nil {
-				return
-			}
-		case "GroupID":
-			decoder.SetFounded()
-			decoder.Offset(1)
-			err = decoder.DecodeByteArrayAsBase64(res.GroupID[:])
-			if err != nil {
-				return
-			}
-		case "MinNumBuy":
-			decoder.SetFounded()
-			res.MinNumBuy, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-		case "StockNumber":
-			decoder.SetFounded()
-			res.StockNumber, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-		case "LiveUntil":
-			decoder.SetFounded()
-			var num int64
-			num, err = decoder.DecodeInt64()
-			if err != nil {
-				return
-			}
-			res.LiveUntil = etime.Time(num)
-		case "AllowWeekdays":
-			decoder.SetFounded()
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-			res.AllowWeekdays = etime.Weekdays(num)
-		case "AllowDayhours":
-			decoder.SetFounded()
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-			res.AllowDayhours = etime.Dayhours(num)
+		case "DCCommission":
+			var num uint16
+			num, err = decoder.DecodeUInt16()
+			res.DCCommission = math.PerMyriad(num)
+		case "SellerCommission":
+			var num uint16
+			num, err = decoder.DecodeUInt16()
+			res.SellerCommission = math.PerMyriad(num)
+
+		case "Authorization":
+			err = res.Authorization.JSONDecoder(decoder)
+
 		case "Description":
-			decoder.SetFounded()
-			decoder.Offset(1)
-			res.Description = decoder.DecodeString()
+			res.Description, err = decoder.DecodeString()
 		case "Type":
-			decoder.SetFounded()
 			var num uint8
 			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
 			res.Type = datastore.ProductAuctionType(num)
 		case "Status":
-			decoder.SetFounded()
 			var num uint8
 			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
 			res.Status = datastore.ProductAuctionStatus(num)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -503,47 +348,20 @@ func (res *getProductAuctionRes) jsonEncoder() (buf []byte) {
 	encoder.EncodeString(`","OrgID":"`)
 	encoder.EncodeByteSliceAsBase64(res.OrgID[:])
 
-	encoder.EncodeString(`","WikiID":"`)
-	encoder.EncodeByteSliceAsBase64(res.WikiID[:])
+	encoder.EncodeString(`","QuiddityID":"`)
+	encoder.EncodeByteSliceAsBase64(res.QuiddityID[:])
 
-	encoder.EncodeString(`","Currency":`)
-	encoder.EncodeUInt64(uint64(res.Currency))
+	encoder.EncodeString(`","Discount":`)
+	encoder.EncodeUInt16(uint16(res.Discount))
 
-	encoder.EncodeString(`,"SuggestPrice":`)
-	encoder.EncodeUInt64(uint64(res.SuggestPrice))
-
-	encoder.EncodeString(`,"DistributionCenterCommission":`)
-	encoder.EncodeUInt64(uint64(res.DistributionCenterCommission))
+	encoder.EncodeString(`,"DCCommission":`)
+	encoder.EncodeUInt16(uint16(res.DCCommission))
 
 	encoder.EncodeString(`,"SellerCommission":`)
-	encoder.EncodeUInt64(uint64(res.SellerCommission))
+	encoder.EncodeUInt16(uint16(res.SellerCommission))
 
-	encoder.EncodeString(`,"Discount":`)
-	encoder.EncodeUInt64(uint64(res.Discount))
-
-	encoder.EncodeString(`,"PayablePrice":`)
-	encoder.EncodeUInt64(uint64(res.PayablePrice))
-
-	encoder.EncodeString(`,"DistributionCenterID":"`)
-	encoder.EncodeByteSliceAsBase64(res.DistributionCenterID[:])
-
-	encoder.EncodeString(`","GroupID":"`)
-	encoder.EncodeByteSliceAsBase64(res.GroupID[:])
-
-	encoder.EncodeString(`","MinNumBuy":`)
-	encoder.EncodeUInt64(res.MinNumBuy)
-
-	encoder.EncodeString(`,"StockNumber":`)
-	encoder.EncodeUInt64(res.StockNumber)
-
-	encoder.EncodeString(`,"LiveUntil":`)
-	encoder.EncodeInt64(int64(res.LiveUntil))
-
-	encoder.EncodeString(`,"AllowWeekdays":`)
-	encoder.EncodeUInt8(uint8(res.AllowWeekdays))
-
-	encoder.EncodeString(`,"AllowDayhours":`)
-	encoder.EncodeUInt64(uint64(res.AllowDayhours))
+	encoder.EncodeString(`,"Authorization":`)
+	res.Authorization.JSONEncoder(encoder)
 
 	encoder.EncodeString(`,"Description":"`)
 	encoder.EncodeString(res.Description)
@@ -560,6 +378,7 @@ func (res *getProductAuctionRes) jsonEncoder() (buf []byte) {
 
 func (res *getProductAuctionRes) jsonLen() (ln int) {
 	ln = len(res.Description)
-	ln += 879
+	ln += res.Authorization.JSONLen()
+	ln += 394
 	return
 }

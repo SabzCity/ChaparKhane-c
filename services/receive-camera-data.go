@@ -12,18 +12,22 @@ import (
 
 var receiveCameraDataService = achaemenid.Service{
 	ID:                2887752942,
-	CRUD:              authorization.CRUDNone,
 	IssueDate:         1604307348,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
 
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDCreate,
+		UserType: authorization.UserTypeApp,
+	},
+
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Receive Camera Data",
+		lang.LanguageEnglish: "Receive Camera Data",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "Suggest to send more than 30fps. It is rule to send data each 10sec, means send more than 300frame in each request",
+		lang.LanguageEnglish: "Suggest to send more than 30fps. It is rule to send data each 10sec, means send more than 300frame in each request",
 	},
 	TAGS: []string{
 		"",

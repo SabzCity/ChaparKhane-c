@@ -7,9 +7,11 @@ import (
 	"crypto/rand"
 
 	"../libgo/achaemenid"
-	"../libgo/asanak.com"
 	"../libgo/captcha"
+	er "../libgo/error"
 	"../libgo/log"
+	"../libgo/sdk/asanak.com"
+	sep "../libgo/sdk/sep.ir"
 )
 
 var (
@@ -18,114 +20,129 @@ var (
 	smsProvider       asanak.Asanak
 	smsOTPSecurityKey = make([]byte, 32)
 
+	sepPOS sep.POS
+
 	adminUserID = [32]byte{128}
 )
 
-// Server store address location to server use by other part of app!
-var server *achaemenid.Server
+func init() {
+	var err *er.Error
+	var goErr error
 
-// Init use to register all available services to given achaemenid.
-func Init(s *achaemenid.Server) {
-	var err error
-
-	server = s
-
-	var asanakJSON = s.Assets.Secret.GetFile("asanak.com.json")
+	var asanakJSON = achaemenid.Server.Assets.Secret.GetFile("asanak.com.json")
 	if asanakJSON == nil {
 		log.Fatal("Can't find 'asanak.com.json' file in 'secret' folder in top of repository")
 	}
 	smsProvider.Init(asanakJSON.Data)
 
-	_, err = rand.Read(smsOTPSecurityKey)
-	// Note that err == nil only if we read len(SecurityKey) bytes.
+	_, goErr = rand.Read(smsOTPSecurityKey)
+	// Note that goErr == nil only if we read len(SecurityKey) bytes.
+	if goErr != nil {
+		log.Fatal(goErr)
+	}
+
+	var sepJSON = achaemenid.Server.Assets.Secret.GetFile("sep.ir-pos.json")
+	err = sepPOS.Init(sepJSON.Data)
 	if err != nil {
 		log.Fatal(err)
 	}
+}
 
+func init() {
 	// PersonAuthentication
-	s.Services.RegisterService(&registerNewPersonService)
-	s.Services.RegisterService(&changePersonPasswordService)
-	s.Services.RegisterService(&blockPersonService)
-	s.Services.RegisterService(&recoverPersonAccountService)
-	s.Services.RegisterService(&revokePersonPublicKeyService)
-	s.Services.RegisterService(&unblockPersonService)
-	s.Services.RegisterService(&getPersonStatusService)
+	achaemenid.Server.Services.RegisterService(&registerPersonService)
+	achaemenid.Server.Services.RegisterService(&changePersonPasswordService)
+	achaemenid.Server.Services.RegisterService(&blockPersonService)
+	achaemenid.Server.Services.RegisterService(&recoverPersonAccountService)
+	achaemenid.Server.Services.RegisterService(&revokePersonPublicKeyService)
+	achaemenid.Server.Services.RegisterService(&unblockPersonService)
+	achaemenid.Server.Services.RegisterService(&getPersonStatusService)
 
 	// PersonNumber
-	s.Services.RegisterService(&registerPersonNumberService)
-	s.Services.RegisterService(&getPersonNumberStatusService)
-	s.Services.RegisterService(&getPersonNumberService)
-	// s.Services.RegisterService(&)
+	achaemenid.Server.Services.RegisterService(&registerPersonNumberService)
+	achaemenid.Server.Services.RegisterService(&getPersonNumberStatusService)
+	achaemenid.Server.Services.RegisterService(&getPersonNumberService)
+	// achaemenid.Server.Services.RegisterService(&)
 
-	// UserAppsConnection
-	s.Services.RegisterService(&authenticateAppConnectionService)
-	s.Services.RegisterService(&getUserAppConnectionsIDService)
-	s.Services.RegisterService(&getUserAppConnectionService)
-	s.Services.RegisterService(&getUserAppGivenDelegateConnectionsIDService)
-	s.Services.RegisterService(&getUserAppGottenDelegateConnectionsIDService)
-	s.Services.RegisterService(&registerUserAppConnectionService)
-	s.Services.RegisterService(&updateUserAppConnectionService)
-	// s.Services.RegisterService(&)
+	// UserAppConnection
+	achaemenid.Server.Services.RegisterService(&authenticateAppConnectionService)
+	achaemenid.Server.Services.RegisterService(&findUserAppConnectionService)
+	achaemenid.Server.Services.RegisterService(&getUserAppConnectionService)
+	achaemenid.Server.Services.RegisterService(&findUserAppConnectionByGivenDelegateService)
+	achaemenid.Server.Services.RegisterService(&findUserAppConnectionByGottenDelegateService)
+	achaemenid.Server.Services.RegisterService(&registerUserAppConnectionService)
+	achaemenid.Server.Services.RegisterService(&updateUserAppConnectionService)
+	// achaemenid.Server.Services.RegisterService(&)
 
 	// PersonPublicKey
-	s.Services.RegisterService(&approvePersonPublicKeyService)
-	s.Services.RegisterService(&authenticatePersonPublicKeyService)
+	achaemenid.Server.Services.RegisterService(&approvePersonPublicKeyService)
+	achaemenid.Server.Services.RegisterService(&authenticatePersonPublicKeyService)
 
 	// OrganizationAuthentication
-	s.Services.RegisterService(&getOrganizationByDomainService)
-	s.Services.RegisterService(&getOrganizationByIDService)
-	s.Services.RegisterService(&getOrganizationByNameService)
-	s.Services.RegisterService(&registerNewOrganizationService)
-	s.Services.RegisterService(&updateOrganizationService)
-	s.Services.RegisterService(&getLastOrganizationsIDService)
-	// s.Services.RegisterService(&blockOrgService)
-	// s.Services.RegisterService(&)
+	achaemenid.Server.Services.RegisterService(&registerNewOrganizationService)
+	achaemenid.Server.Services.RegisterService(&updateOrganizationService)
+	achaemenid.Server.Services.RegisterService(&getOrganizationService)
+	achaemenid.Server.Services.RegisterService(&getLastOrganizationsIDService)
+	// achaemenid.Server.Services.RegisterService(&blockOrgService)
+	// achaemenid.Server.Services.RegisterService(&)
 
-	// Wiki
-	s.Services.RegisterService(&registerNewWikiService)
-	s.Services.RegisterService(&getWikiByIDService)
-	s.Services.RegisterService(&findWikiByTitleService)
-	s.Services.RegisterService(&findWikiByURIService)
-	s.Services.RegisterService(&findWikiByOrgIDService)
-	s.Services.RegisterService(&registerWikiNewLanguageService)
-	s.Services.RegisterService(&updateWikiService)
-	s.Services.RegisterService(&getWikiLanguagesService)
+	// Quiddity
+	achaemenid.Server.Services.RegisterService(&registerQuiddityService)
+	achaemenid.Server.Services.RegisterService(&registerQuiddityNewLanguageService)
+	achaemenid.Server.Services.RegisterService(&updateQuiddityService)
+	achaemenid.Server.Services.RegisterService(&getQuiddityService)
+	achaemenid.Server.Services.RegisterService(&findQuiddityByTitleService)
+	achaemenid.Server.Services.RegisterService(&findQuiddityByURIService)
+	achaemenid.Server.Services.RegisterService(&findQuiddityByOrgIDService)
+	achaemenid.Server.Services.RegisterService(&getQuiddityLanguagesService)
 
 	// ProductAuction
-	s.Services.RegisterService(&registerDefaultProductAuctionService)
-	s.Services.RegisterService(&registerCustomProductAuctionService)
-	s.Services.RegisterService(&updateProductAuctionService)
-	s.Services.RegisterService(&getProductAuctionService)
-	s.Services.RegisterService(&findProductAuctionByDistributionCenterIDService)
-	s.Services.RegisterService(&findProductAuctionByGroupIDService)
-	s.Services.RegisterService(&findProductAuctionByOrgIDService)
-	s.Services.RegisterService(&findProductAuctionByWikiIDDistributionCenterIDService)
-	s.Services.RegisterService(&findProductAuctionByWikiIDGroupIDService)
-	s.Services.RegisterService(&findProductAuctionByWikiIDService)
+	achaemenid.Server.Services.RegisterService(&registerDefaultProductAuctionService)
+	achaemenid.Server.Services.RegisterService(&registerCustomProductAuctionService)
+	achaemenid.Server.Services.RegisterService(&updateProductAuctionService)
+	achaemenid.Server.Services.RegisterService(&getProductAuctionService)
+	achaemenid.Server.Services.RegisterService(&findProductAuctionByDistributionCenterIDService)
+	achaemenid.Server.Services.RegisterService(&findProductAuctionByGroupIDService)
+	achaemenid.Server.Services.RegisterService(&findProductAuctionByOrgIDService)
+	achaemenid.Server.Services.RegisterService(&findProductAuctionByQuiddityIDDistributionCenterIDService)
+	achaemenid.Server.Services.RegisterService(&findProductAuctionByQuiddityIDGroupIDService)
+	achaemenid.Server.Services.RegisterService(&findProductAuctionByQuiddityIDService)
 
-	// ForeignDetail
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-
-	// OrganizationStaff
-	// s.Services.RegisterService(&approveOrgPositionByPersonService)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
+	// ProductPrice
+	achaemenid.Server.Services.RegisterService(&registerProductPriceService)
+	achaemenid.Server.Services.RegisterService(&updateProductPriceService)
+	achaemenid.Server.Services.RegisterService(&getProductPriceService)
+	achaemenid.Server.Services.RegisterService(&findProductPriceByOrgIDService)
+	// achaemenid.Server.Services.RegisterService(&)
 
 	// Product
-	// s.Services.RegisterService(&approveProductAuctionByWarehouseService)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
-	// s.Services.RegisterService(&)
+	achaemenid.Server.Services.RegisterService(&registerProductService)
+	// achaemenid.Server.Services.RegisterService(&approveProductAuctionByWarehouseService)
+	// achaemenid.Server.Services.RegisterService(&)
+	// achaemenid.Server.Services.RegisterService(&)
+	// achaemenid.Server.Services.RegisterService(&)
+
+	// FinancialTransaction
+	achaemenid.Server.Services.RegisterService(&registerFinancialTransactionService)
+	achaemenid.Server.Services.RegisterService(&getFinancialTransactionService)
+	achaemenid.Server.Services.RegisterService(&findFinancialTransactionByDayService)
+
+	// ForeignDetail
+	// achaemenid.Server.Services.RegisterService(&)
+	// achaemenid.Server.Services.RegisterService(&)
+	// achaemenid.Server.Services.RegisterService(&)
+	// achaemenid.Server.Services.RegisterService(&)
+
+	// OrganizationStaff
+	// achaemenid.Server.Services.RegisterService(&approveOrgPositionByPersonService)
+	// achaemenid.Server.Services.RegisterService(&)
+	// achaemenid.Server.Services.RegisterService(&)
+	// achaemenid.Server.Services.RegisterService(&)
+	// achaemenid.Server.Services.RegisterService(&)
 
 	// Common Services
-	s.Services.RegisterService(&getNewPhraseCaptchaService)
-	s.Services.RegisterService(&getPhraseCaptchaAudioService)
-	s.Services.RegisterService(&solvePhraseCaptchaService)
-	s.Services.RegisterService(&sendOtpService)
+	achaemenid.Server.Services.RegisterService(&getNewPhraseCaptchaService)
+	achaemenid.Server.Services.RegisterService(&getPhraseCaptchaAudioService)
+	achaemenid.Server.Services.RegisterService(&solvePhraseCaptchaService)
+	achaemenid.Server.Services.RegisterService(&sendOtpService)
 }

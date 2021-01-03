@@ -15,8 +15,8 @@ import (
 	"../libgo/syllab"
 )
 
-var getWikiByIDService = achaemenid.Service{
-	ID:                535138582,
+var getQuiddityService = achaemenid.Service{
+	ID:                2527290225,
 	IssueDate:         1605026701,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
@@ -29,29 +29,29 @@ var getWikiByIDService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Get Wiki By ID",
+		lang.LanguageEnglish: "Get Quiddity",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
-		"Wiki",
+		"Quiddity",
 	},
 
-	SRPCHandler: GetWikiByIDSRPC,
-	HTTPHandler: GetWikiByIDHTTP,
+	SRPCHandler: GetQuidditySRPC,
+	HTTPHandler: GetQuiddityHTTP,
 }
 
-// GetWikiByIDSRPC is sRPC handler of GetWikiByID service.
-func GetWikiByIDSRPC(st *achaemenid.Stream) {
-	var req = &getWikiByIDReq{}
+// GetQuidditySRPC is sRPC handler of GetQuiddity service.
+func GetQuidditySRPC(st *achaemenid.Stream) {
+	var req = &getQuiddityReq{}
 	st.Err = req.syllabDecoder(srpc.GetPayload(st.IncomePayload))
 	if st.Err != nil {
 		return
 	}
 
-	var res *getWikiByIDRes
-	res, st.Err = getWikiByID(st, req)
+	var res *getQuiddityRes
+	res, st.Err = getQuiddity(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		return
@@ -61,17 +61,17 @@ func GetWikiByIDSRPC(st *achaemenid.Stream) {
 	res.syllabEncoder(srpc.GetPayload(st.OutcomePayload))
 }
 
-// GetWikiByIDHTTP is HTTP handler of GetWikiByID service.
-func GetWikiByIDHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
-	var req = &getWikiByIDReq{}
+// GetQuiddityHTTP is HTTP handler of GetQuiddity service.
+func GetQuiddityHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
+	var req = &getQuiddityReq{}
 	st.Err = req.jsonDecoder(httpReq.Body)
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
-	var res *getWikiByIDRes
-	res, st.Err = getWikiByID(st, req)
+	var res *getQuiddityRes
+	res, st.Err = getQuiddity(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
@@ -83,27 +83,25 @@ func GetWikiByIDHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http
 	httpRes.Body = res.jsonEncoder()
 }
 
-type getWikiByIDReq struct {
+type getQuiddityReq struct {
 	ID       [32]byte `json:",string"`
 	Language lang.Language
 }
 
-type getWikiByIDRes struct {
+type getQuiddityRes struct {
 	WriteTime etime.Time
 
 	AppInstanceID    [32]byte `json:",string"`
 	UserConnectionID [32]byte `json:",string"`
 	OrgID            [32]byte `json:",string"`
 
-	URI      string
-	Title    string
-	Text     string
-	Pictures [][32]byte `json:",string"`
-	Status   datastore.WikiStatus
+	URI    string
+	Title  string
+	Status datastore.QuiddityStatus
 }
 
-func getWikiByID(st *achaemenid.Stream, req *getWikiByIDReq) (res *getWikiByIDRes, err *er.Error) {
-	var w = datastore.Wiki{
+func getQuiddity(st *achaemenid.Stream, req *getQuiddityReq) (res *getQuiddityRes, err *er.Error) {
+	var w = datastore.Quiddity{
 		ID:       req.ID,
 		Language: req.Language,
 	}
@@ -112,18 +110,16 @@ func getWikiByID(st *achaemenid.Stream, req *getWikiByIDReq) (res *getWikiByIDRe
 		return
 	}
 
-	res = &getWikiByIDRes{
+	res = &getQuiddityRes{
 		WriteTime: w.WriteTime,
 
 		AppInstanceID:    w.AppInstanceID,
 		UserConnectionID: w.UserConnectionID,
 		OrgID:            w.OrgID,
 
-		URI:      w.URI,
-		Title:    w.Title,
-		Text:     w.Text,
-		Pictures: w.Pictures,
-		Status:   w.Status,
+		URI:    w.URI,
+		Title:  w.Title,
+		Status: w.Status,
 	}
 
 	return
@@ -133,7 +129,7 @@ func getWikiByID(st *achaemenid.Stream, req *getWikiByIDReq) (res *getWikiByIDRe
 	Request Encoders & Decoders
 */
 
-func (req *getWikiByIDReq) syllabDecoder(buf []byte) (err *er.Error) {
+func (req *getQuiddityReq) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < req.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -144,58 +140,49 @@ func (req *getWikiByIDReq) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (req *getWikiByIDReq) syllabEncoder(buf []byte) {
+func (req *getQuiddityReq) syllabEncoder(buf []byte) {
 	copy(buf[0:], req.ID[:])
 	syllab.SetUInt32(buf, 32, uint32(req.Language))
 	return
 }
 
-func (req *getWikiByIDReq) syllabStackLen() (ln uint32) {
+func (req *getQuiddityReq) syllabStackLen() (ln uint32) {
 	return 36
 }
 
-func (req *getWikiByIDReq) syllabHeapLen() (ln uint32) {
+func (req *getQuiddityReq) syllabHeapLen() (ln uint32) {
 	return
 }
 
-func (req *getWikiByIDReq) syllabLen() (ln int) {
+func (req *getQuiddityReq) syllabLen() (ln int) {
 	return int(req.syllabStackLen() + req.syllabHeapLen())
 }
 
-func (req *getWikiByIDReq) jsonDecoder(buf []byte) (err *er.Error) {
+func (req *getQuiddityReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(5)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "ID":
 			err = decoder.DecodeByteArrayAsBase64(req.ID[:])
-			if err != nil {
-				return
-			}
-		case 'L':
-			decoder.SetFounded()
-			decoder.Offset(10)
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
+		case "Language":
+			var num uint32
+			num, err = decoder.DecodeUInt32()
 			req.Language = lang.Language(num)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
 	return
 }
 
-func (req *getWikiByIDReq) jsonEncoder() (buf []byte) {
+func (req *getQuiddityReq) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, req.jsonLen()),
 	}
@@ -204,14 +191,14 @@ func (req *getWikiByIDReq) jsonEncoder() (buf []byte) {
 	encoder.EncodeByteSliceAsBase64(req.ID[:])
 
 	encoder.EncodeString(`","Language":`)
-	encoder.EncodeUInt64(uint64(req.Language))
+	encoder.EncodeUInt32(uint32(req.Language))
 
 	encoder.EncodeByte('}')
 	return encoder.Buf
 }
 
-func (req *getWikiByIDReq) jsonLen() (ln int) {
-	ln = 84
+func (req *getQuiddityReq) jsonLen() (ln int) {
+	ln = 74
 	return
 }
 
@@ -219,7 +206,7 @@ func (req *getWikiByIDReq) jsonLen() (ln int) {
 	Response Encoders & Decoders
 */
 
-func (res *getWikiByIDRes) syllabDecoder(buf []byte) (err *er.Error) {
+func (res *getQuiddityRes) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < res.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -229,15 +216,14 @@ func (res *getWikiByIDRes) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(res.AppInstanceID[:], buf[8:])
 	copy(res.UserConnectionID[:], buf[40:])
 	copy(res.OrgID[:], buf[72:])
+
 	res.URI = syllab.UnsafeGetString(buf, 104)
 	res.Title = syllab.UnsafeGetString(buf, 112)
-	res.Text = syllab.UnsafeGetString(buf, 120)
-	res.Pictures = syllab.UnsafeGet32ByteArraySlice(buf, 128)
-	res.Status = datastore.WikiStatus(syllab.GetUInt8(buf, 136))
+	res.Status = datastore.QuiddityStatus(syllab.GetUInt8(buf, 120))
 	return
 }
 
-func (res *getWikiByIDRes) syllabEncoder(buf []byte) {
+func (res *getQuiddityRes) syllabEncoder(buf []byte) {
 	var hsi uint32 = res.syllabStackLen() // Heap start index || Stack size!
 
 	syllab.SetInt64(buf, 0, int64(res.WriteTime))
@@ -246,110 +232,61 @@ func (res *getWikiByIDRes) syllabEncoder(buf []byte) {
 	copy(buf[72:], res.OrgID[:])
 	hsi = syllab.SetString(buf, res.URI, 104, hsi)
 	hsi = syllab.SetString(buf, res.Title, 112, hsi)
-	hsi = syllab.SetString(buf, res.Text, 120, hsi)
-	syllab.Set32ByteArrayArray(buf, res.Pictures, 128, hsi)
-	syllab.SetUInt8(buf, 136, uint8(res.Status))
+	syllab.SetUInt8(buf, 120, uint8(res.Status))
 	return
 }
 
-func (res *getWikiByIDRes) syllabStackLen() (ln uint32) {
-	return 137
+func (res *getQuiddityRes) syllabStackLen() (ln uint32) {
+	return 121
 }
 
-func (res *getWikiByIDRes) syllabHeapLen() (ln uint32) {
+func (res *getQuiddityRes) syllabHeapLen() (ln uint32) {
 	ln += uint32(len(res.URI))
 	ln += uint32(len(res.Title))
-	ln += uint32(len(res.Text))
-	ln += uint32(len(res.Pictures) * 32)
 	return
 }
 
-func (res *getWikiByIDRes) syllabLen() (ln int) {
+func (res *getQuiddityRes) syllabLen() (ln int) {
 	return int(res.syllabStackLen() + res.syllabHeapLen())
 }
 
-func (res *getWikiByIDRes) jsonDecoder(buf []byte) (err *er.Error) {
+func (res *getQuiddityRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'W':
-			decoder.SetFounded()
-			decoder.Offset(11)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "WriteTime":
 			var num int64
 			num, err = decoder.DecodeInt64()
-			if err != nil {
-				return
-			}
 			res.WriteTime = etime.Time(num)
-		case 'A':
-			decoder.SetFounded()
-			decoder.Offset(16)
+		case "AppInstanceID":
 			err = decoder.DecodeByteArrayAsBase64(res.AppInstanceID[:])
-			if err != nil {
-				return
-			}
-		case 'U':
-			switch decoder.Buf[1] {
-			case 's':
-				decoder.SetFounded()
-				decoder.Offset(19)
-				err = decoder.DecodeByteArrayAsBase64(res.UserConnectionID[:])
-				if err != nil {
-					return
-				}
-			case 'R':
-				decoder.SetFounded()
-				decoder.Offset(6)
-				res.URI = decoder.DecodeString()
-			}
-		case 'O':
-			decoder.SetFounded()
-			decoder.Offset(8)
+		case "UserConnectionID":
+			err = decoder.DecodeByteArrayAsBase64(res.UserConnectionID[:])
+		case "OrgID":
 			err = decoder.DecodeByteArrayAsBase64(res.OrgID[:])
-			if err != nil {
-				return
-			}
-		case 'T':
-			switch decoder.Buf[1] {
-			case 'i':
-				decoder.SetFounded()
-				decoder.Offset(8)
-				res.Title = decoder.DecodeString()
-			case 'e':
-				decoder.SetFounded()
-				decoder.Offset(7)
-				res.Text = decoder.DecodeString()
-			}
-		case 'P':
-			decoder.SetFounded()
-			decoder.Offset(11)
-			res.Pictures, err = decoder.Decode32ByteArraySliceAsBase64()
-			if err != nil {
-				return
-			}
-		case 'S':
-			decoder.SetFounded()
-			decoder.Offset(8)
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-			res.Status = datastore.WikiStatus(num)
+		case "URI":
+			res.URI, err = decoder.DecodeString()
+		case "Title":
+			res.Title, err = decoder.DecodeString()
+		case "Status":
+			var num uint8
+			num, err = decoder.DecodeUInt8()
+			res.Status = datastore.QuiddityStatus(num)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
 	return
 }
 
-func (res *getWikiByIDRes) jsonEncoder() (buf []byte) {
+func (res *getQuiddityRes) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, res.jsonLen()),
 	}
@@ -372,22 +309,15 @@ func (res *getWikiByIDRes) jsonEncoder() (buf []byte) {
 	encoder.EncodeString(`","Title":"`)
 	encoder.EncodeString(res.Title)
 
-	encoder.EncodeString(`","Text":"`)
-	encoder.EncodeString(res.Text)
-
-	encoder.EncodeString(`","Pictures":[`)
-	encoder.Encode32ByteArraySliceAsBase64(res.Pictures)
-
-	encoder.EncodeString(`],"Status":`)
+	encoder.EncodeString(`","Status":`)
 	encoder.EncodeUInt8(uint8(res.Status))
 
 	encoder.EncodeByte('}')
 	return encoder.Buf
 }
 
-func (res *getWikiByIDRes) jsonLen() (ln int) {
-	ln = len(res.URI) + len(res.Title) + len(res.Text)
-	ln += len(res.Pictures) * 46
-	ln += 287
+func (res *getQuiddityRes) jsonLen() (ln int) {
+	ln = len(res.URI) + len(res.Title)
+	ln += 248
 	return
 }

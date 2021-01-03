@@ -14,8 +14,8 @@ import (
 	"../libgo/syllab"
 )
 
-var findWikiByURIService = achaemenid.Service{
-	ID:                3272467714,
+var findQuiddityByURIService = achaemenid.Service{
+	ID:                4276179545,
 	IssueDate:         1605026726,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
@@ -28,29 +28,29 @@ var findWikiByURIService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Get Wiki By URI",
+		lang.LanguageEnglish: "Find Quiddity By URI",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
-		"Wiki",
+		"Quiddity",
 	},
 
-	SRPCHandler: FindWikiByURISRPC,
-	HTTPHandler: FindWikiByURIHTTP,
+	SRPCHandler: FindQuiddityByURISRPC,
+	HTTPHandler: FindQuiddityByURIHTTP,
 }
 
-// FindWikiByURISRPC is sRPC handler of FindWikiByURI service.
-func FindWikiByURISRPC(st *achaemenid.Stream) {
-	var req = &findWikiByURIReq{}
+// FindQuiddityByURISRPC is sRPC handler of FindQuiddityByURI service.
+func FindQuiddityByURISRPC(st *achaemenid.Stream) {
+	var req = &findQuiddityByURIReq{}
 	st.Err = req.syllabDecoder(srpc.GetPayload(st.IncomePayload))
 	if st.Err != nil {
 		return
 	}
 
-	var res *findWikiByURIRes
-	res, st.Err = findWikiByURI(st, req)
+	var res *findQuiddityByURIRes
+	res, st.Err = findQuiddityByURI(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		return
@@ -60,17 +60,17 @@ func FindWikiByURISRPC(st *achaemenid.Stream) {
 	res.syllabEncoder(srpc.GetPayload(st.OutcomePayload))
 }
 
-// FindWikiByURIHTTP is HTTP handler of FindWikiByURI service.
-func FindWikiByURIHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
-	var req = &findWikiByURIReq{}
+// FindQuiddityByURIHTTP is HTTP handler of FindQuiddityByURI service.
+func FindQuiddityByURIHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
+	var req = &findQuiddityByURIReq{}
 	st.Err = req.jsonDecoder(httpReq.Body)
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
-	var res *findWikiByURIRes
-	res, st.Err = findWikiByURI(st, req)
+	var res *findQuiddityByURIRes
+	res, st.Err = findQuiddityByURI(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
@@ -82,27 +82,27 @@ func FindWikiByURIHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *ht
 	httpRes.Body = res.jsonEncoder()
 }
 
-type findWikiByURIReq struct {
+type findQuiddityByURIReq struct {
 	URI    string
 	Offset uint64
 	Limit  uint64
 }
 
-type findWikiByURIRes struct {
+type findQuiddityByURIRes struct {
 	IDs [][32]byte `json:",string"`
 }
 
-func findWikiByURI(st *achaemenid.Stream, req *findWikiByURIReq) (res *findWikiByURIRes, err *er.Error) {
-	var w = datastore.Wiki{
+func findQuiddityByURI(st *achaemenid.Stream, req *findQuiddityByURIReq) (res *findQuiddityByURIRes, err *er.Error) {
+	var q = datastore.Quiddity{
 		URI: req.URI,
 	}
 	var indexRes [][32]byte
-	indexRes, err = w.GetIDsByURIByHashIndex(req.Offset, req.Limit)
+	indexRes, err = q.FindIDsByURI(req.Offset, req.Limit)
 	if err != nil {
 		return
 	}
 
-	res = &findWikiByURIRes{
+	res = &findQuiddityByURIRes{
 		IDs: indexRes,
 	}
 	return
@@ -112,7 +112,7 @@ func findWikiByURI(st *achaemenid.Stream, req *findWikiByURIReq) (res *findWikiB
 	Request Encoders & Decoders
 */
 
-func (req *findWikiByURIReq) syllabDecoder(buf []byte) (err *er.Error) {
+func (req *findQuiddityByURIReq) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < req.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -124,7 +124,7 @@ func (req *findWikiByURIReq) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (req *findWikiByURIReq) syllabEncoder(buf []byte) {
+func (req *findQuiddityByURIReq) syllabEncoder(buf []byte) {
 	var hsi uint32 = req.syllabStackLen() // Heap start index || Stack size!
 
 	hsi = syllab.SetString(buf, req.URI, 0, hsi)
@@ -133,55 +133,44 @@ func (req *findWikiByURIReq) syllabEncoder(buf []byte) {
 	return
 }
 
-func (req *findWikiByURIReq) syllabStackLen() (ln uint32) {
+func (req *findQuiddityByURIReq) syllabStackLen() (ln uint32) {
 	return 24
 }
 
-func (req *findWikiByURIReq) syllabHeapLen() (ln uint32) {
+func (req *findQuiddityByURIReq) syllabHeapLen() (ln uint32) {
 	ln = uint32(len(req.URI))
 	return
 }
 
-func (req *findWikiByURIReq) syllabLen() (ln int) {
+func (req *findQuiddityByURIReq) syllabLen() (ln int) {
 	return int(req.syllabStackLen() + req.syllabHeapLen())
 }
 
-func (req *findWikiByURIReq) jsonDecoder(buf []byte) (err *er.Error) {
+func (req *findQuiddityByURIReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'U':
-			decoder.SetFounded()
-			decoder.Offset(6)
-			req.URI = decoder.DecodeString()
-		case 'O':
-			decoder.SetFounded()
-			decoder.Offset(8)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "URI":
+			req.URI, err = decoder.DecodeString()
+		case "Offset":
 			req.Offset, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-		case 'L':
-			decoder.SetFounded()
-			decoder.Offset(7)
+		case "Limit":
 			req.Limit, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
 	return
 }
 
-func (req *findWikiByURIReq) jsonEncoder() (buf []byte) {
+func (req *findQuiddityByURIReq) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, req.jsonLen()),
 	}
@@ -199,8 +188,8 @@ func (req *findWikiByURIReq) jsonEncoder() (buf []byte) {
 	return encoder.Buf
 }
 
-func (req *findWikiByURIReq) jsonLen() (ln int) {
-	ln += 0 + len(req.URI)
+func (req *findQuiddityByURIReq) jsonLen() (ln int) {
+	ln = len(req.URI)
 	ln += 69
 	return
 }
@@ -209,7 +198,7 @@ func (req *findWikiByURIReq) jsonLen() (ln int) {
 	Response Encoders & Decoders
 */
 
-func (res *findWikiByURIRes) syllabDecoder(buf []byte) (err *er.Error) {
+func (res *findQuiddityByURIRes) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < res.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -219,51 +208,47 @@ func (res *findWikiByURIRes) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (res *findWikiByURIRes) syllabEncoder(buf []byte) {
+func (res *findQuiddityByURIRes) syllabEncoder(buf []byte) {
 	var hsi uint32 = res.syllabStackLen() // Heap start index || Stack size!
 
 	syllab.Set32ByteArrayArray(buf, res.IDs, 0, hsi)
 	return
 }
 
-func (res *findWikiByURIRes) syllabStackLen() (ln uint32) {
+func (res *findQuiddityByURIRes) syllabStackLen() (ln uint32) {
 	return 8
 }
 
-func (res *findWikiByURIRes) syllabHeapLen() (ln uint32) {
+func (res *findQuiddityByURIRes) syllabHeapLen() (ln uint32) {
 	ln = uint32(len(res.IDs) * 32)
 	return
 }
 
-func (res *findWikiByURIRes) syllabLen() (ln int) {
+func (res *findQuiddityByURIRes) syllabLen() (ln int) {
 	return int(res.syllabStackLen() + res.syllabHeapLen())
 }
 
-func (res *findWikiByURIRes) jsonDecoder(buf []byte) (err *er.Error) {
+func (res *findQuiddityByURIRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(6)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "IDs":
 			res.IDs, err = decoder.Decode32ByteArraySliceAsBase64()
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
 	return
 }
 
-func (res *findWikiByURIRes) jsonEncoder() (buf []byte) {
+func (res *findQuiddityByURIRes) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, res.jsonLen()),
 	}
@@ -275,7 +260,7 @@ func (res *findWikiByURIRes) jsonEncoder() (buf []byte) {
 	return encoder.Buf
 }
 
-func (res *findWikiByURIRes) jsonLen() (ln int) {
+func (res *findQuiddityByURIRes) jsonLen() (ln int) {
 	ln = len(res.IDs) * 46
 	ln += 8
 	return

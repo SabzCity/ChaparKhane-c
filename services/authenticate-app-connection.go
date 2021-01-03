@@ -20,25 +20,28 @@ import (
 
 var authenticateAppConnectionService = achaemenid.Service{
 	ID:                528205152,
-	URI:               "", // API services can set like "/apis?528205152" but it is not efficient, find services by ID.
-	CRUD:              authorization.CRUDUpdate,
 	IssueDate:         1603174921,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
 
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDUpdate,
+		UserType: authorization.UserTypeGuest,
+	},
+
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "AuthenticateAppConnection",
-		lang.PersianLanguage: "تایید هوییت ارتباطی برنامه",
+		lang.LanguageEnglish: "AuthenticateAppConnection",
+		lang.LanguagePersian: "تایید هوییت ارتباطی برنامه",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: `Authenticate the person active app connection, can't use to authenticate connection for delegate purpose!
+		lang.LanguageEnglish: `Authenticate the person active app connection, can't use to authenticate connection for delegate purpose!
 Usually use in HTTP protocol!`,
-		lang.PersianLanguage: "تایید هوییت ارتباطی برنامه",
+		lang.LanguagePersian: "تایید هوییت ارتباطی برنامه",
 	},
 	TAGS: []string{
-		"UserAppsConnection", "Authentication",
+		"UserAppConnection", "Authentication",
 	},
 
 	SRPCHandler: AuthenticateAppConnectionSRPC,
@@ -81,14 +84,14 @@ func AuthenticateAppConnectionHTTP(st *achaemenid.Stream, httpReq *http.Request,
 	httpRes.SetStatus(http.StatusOKCode, http.StatusOKPhrase)
 	var cookies = []http.SetCookie{
 		http.SetCookie{
-			Name:     achaemenid.HTTPCookieNameConnectionID,
+			Name:     achaemenid.HTTPCookieNameBaseConnID,
 			Value:    base64.RawStdEncoding.EncodeToString(st.Connection.ID[:]),
 			MaxAge:   "630720000", // = 20 year = 20*365*24*60*60
 			Secure:   true,
 			HTTPOnly: true,
 			SameSite: "Lax",
 		}, http.SetCookie{
-			Name:     achaemenid.HTTPCookieNameUserID,
+			Name:     achaemenid.HTTPCookieNameBaseUserID,
 			Value:    base64.RawStdEncoding.EncodeToString(st.Connection.UserID[:]),
 			MaxAge:   "630720000", // = 20 year = 20*365*24*60*60
 			Secure:   true,
@@ -104,6 +107,7 @@ func AuthenticateAppConnectionHTTP(st *achaemenid.Stream, httpReq *http.Request,
 }
 
 type authenticateAppConnectionReq struct {
+	ThingID      [32]byte `json:",string"`
 	CaptchaID    [16]byte `json:",string"`
 	PersonID     [32]byte `json:",string"`
 	PasswordHash [32]byte `json:",string"`
@@ -111,8 +115,8 @@ type authenticateAppConnectionReq struct {
 }
 
 func authenticateAppConnection(st *achaemenid.Stream, req *authenticateAppConnectionReq) (err *er.Error) {
-	if st.Connection.UserType != achaemenid.UserTypeGuest {
-		err = authorization.ErrAuthorizationUserNotAllow
+	err = st.Authorize()
+	if err != nil {
 		return
 	}
 
@@ -127,27 +131,36 @@ func authenticateAppConnection(st *achaemenid.Stream, req *authenticateAppConnec
 	}
 	err = pa.GetLastByPersonID()
 	if err != nil {
-		if err == ganjine.ErrGanjineRecordNotFound {
+		if err.Equal(ganjine.ErrRecordNotFound) {
 			return
 		}
-		err = ErrPlatformBadSituation
+		err = ErrBadSituation
 		return
 	}
 
 	if req.PasswordHash != pa.PasswordHash {
-		err = ErrPlatformBadPasswordOrOTP
+		err = ErrBadPasswordOrOTP
 		return
 	}
 	if pa.Status == datastore.PersonAuthenticationForceUse2Factor {
 		// TODO::: check OTP
-		// err = ErrPlatformBadPasswordOrOTP
+		// err = ErrBadPasswordOrOTP
+	}
+
+	if req.ThingID != [32]byte{} {
+		var conn = achaemenid.Server.Connections.GetConnByUserIDThingID(pa.PersonID, req.ThingID)
+		if conn != nil {
+			st.Connection = conn
+			achaemenid.Server.Connections.RegisterConnection(conn)
+			return
+		}
 	}
 
 	st.Connection.UserID = pa.PersonID
-	st.Connection.UserType = achaemenid.UserTypePerson
+	st.Connection.UserType = authorization.UserTypePerson
 	st.Connection.State = achaemenid.StateNew
 
-	server.Connections.SaveConn(st.Connection)
+	achaemenid.Server.Connections.SaveConn(st.Connection)
 	return
 }
 
@@ -161,23 +174,25 @@ func (req *authenticateAppConnectionReq) syllabDecoder(buf []byte) (err *er.Erro
 		return
 	}
 
-	copy(req.CaptchaID[:], buf[0:])
-	copy(req.PersonID[:], buf[16:])
-	copy(req.PasswordHash[:], buf[32:])
-	req.OTP = syllab.GetUInt32(buf, 64)
+	copy(req.ThingID[:], buf[0:])
+	copy(req.CaptchaID[:], buf[32:])
+	copy(req.PersonID[:], buf[48:])
+	copy(req.PasswordHash[:], buf[80:])
+	req.OTP = syllab.GetUInt32(buf, 112)
 	return
 }
 
 func (req *authenticateAppConnectionReq) syllabEncoder(buf []byte) {
-	copy(buf[0:], req.CaptchaID[:])
-	copy(buf[16:], req.PersonID[:])
-	copy(buf[32:], req.PasswordHash[:])
-	syllab.SetUInt32(buf, 64, req.OTP)
+	copy(buf[0:], req.ThingID[:])
+	copy(buf[32:], req.CaptchaID[:])
+	copy(buf[48:], req.PersonID[:])
+	copy(buf[80:], req.PasswordHash[:])
+	syllab.SetUInt32(buf, 112, req.OTP)
 	return
 }
 
 func (req *authenticateAppConnectionReq) syllabStackLen() (ln uint32) {
-	return 68
+	return 116
 }
 
 func (req *authenticateAppConnectionReq) syllabHeapLen() (ln uint32) {
@@ -192,46 +207,26 @@ func (req *authenticateAppConnectionReq) jsonDecoder(buf []byte) (err *er.Error)
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'C':
-			decoder.SetFounded()
-			decoder.Offset(12)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "ThingID":
+			err = decoder.DecodeByteArrayAsBase64(req.ThingID[:])
+		case "CaptchaID":
 			err = decoder.DecodeByteArrayAsBase64(req.CaptchaID[:])
-			if err != nil {
-				return
-			}
-		case 'P':
-			switch decoder.Buf[1] {
-			case 'e':
-				decoder.SetFounded()
-				decoder.Offset(11)
-				err = decoder.DecodeByteArrayAsBase64(req.PersonID[:])
-				if err != nil {
-					return
-				}
-			case 'a':
-				decoder.SetFounded()
-				decoder.Offset(15)
-				err = decoder.DecodeByteArrayAsBase64(req.PasswordHash[:])
-				if err != nil {
-					return
-				}
-			}
-		case 'O':
-			decoder.SetFounded()
-			decoder.Offset(5)
+		case "PersonID":
+			err = decoder.DecodeByteArrayAsBase64(req.PersonID[:])
+		case "PasswordHash":
+			err = decoder.DecodeByteArrayAsBase64(req.PasswordHash[:])
+		case "OTP":
 			var num uint64
 			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
 			req.OTP = uint32(num)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -243,7 +238,10 @@ func (req *authenticateAppConnectionReq) jsonEncoder() (buf []byte) {
 		Buf: make([]byte, 0, req.jsonLen()),
 	}
 
-	encoder.EncodeString(`{"CaptchaID":"`)
+	encoder.EncodeString(`{"ThingID":"`)
+	encoder.EncodeByteSliceAsBase64(req.ThingID[:])
+
+	encoder.EncodeString(`","CaptchaID":"`)
 	encoder.EncodeByteSliceAsBase64(req.CaptchaID[:])
 
 	encoder.EncodeString(`","PersonID":"`)
@@ -260,6 +258,6 @@ func (req *authenticateAppConnectionReq) jsonEncoder() (buf []byte) {
 }
 
 func (req *authenticateAppConnectionReq) jsonLen() (ln int) {
-	ln = 183
+	ln = 239
 	return
 }

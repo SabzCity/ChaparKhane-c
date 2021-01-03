@@ -4,82 +4,93 @@ package services
 
 import (
 	"../libgo/achaemenid"
+	"../libgo/authorization"
+	er "../libgo/error"
 	"../libgo/http"
 	"../libgo/json"
+	lang "../libgo/language"
+	"../libgo/srpc"
 )
 
 var revokePersonPublicKeyService = achaemenid.Service{
 	ID:                1775473172,
-	URI:               "", // API services can set like "/apis?1775473172" but it is not efficient, find services by ID.
-	Name:              "RevokePersonPublicKey",
 	IssueDate:         1592390799,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "",
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
-	Description: []string{
-		`Change status of public key and expire it. Due to legal history purpose never delete any public key.
-		PersonID in st.Connection.OwnerID same as stored one in datastore!
-		This service will check person authentication status force use OTP or not.`,
+
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDUpdate,
+		UserType: authorization.UserTypePerson,
 	},
-	TAGS:        []string{"Authentication"},
+
+	Name: map[lang.Language]string{
+		lang.LanguageEnglish: "RevokePersonPublicKey",
+	},
+	Description: map[lang.Language]string{
+		lang.LanguageEnglish: `Change status of public key and expire it. Due to legal history purpose never delete any public key.
+PersonID in st.Connection.OwnerID same as stored one in datastore!
+This service will check person authentication status force use OTP or not.`,
+	},
+	TAGS: []string{
+		"PersonAuthentication",
+	},
+
 	SRPCHandler: RevokePersonPublicKeySRPC,
 	HTTPHandler: RevokePersonPublicKeyHTTP,
 }
 
 // RevokePersonPublicKeySRPC is sRPC handler of RevokePersonPublicKey service.
-func RevokePersonPublicKeySRPC(s *achaemenid.Server, st *achaemenid.Stream) {
+func RevokePersonPublicKeySRPC(st *achaemenid.Stream) {
 	var req = &revokePersonPublicKeyReq{}
-	st.ReqRes.Err = req.syllabDecoder(st.Payload[4:])
-	if st.ReqRes.Err != nil {
+	st.Err = req.syllabDecoder(srpc.GetPayload(st.IncomePayload))
+	if st.Err != nil {
 		return
 	}
 
 	var res *revokePersonPublicKeyRes
-	res, st.ReqRes.Err = revokePersonPublicKey(st, req)
+	res, st.Err = revokePersonPublicKey(st, req)
 	// Check if any error occur in bussiness logic
-	if st.ReqRes.Err != nil {
+	if st.Err != nil {
 		return
 	}
 
-	st.ReqRes.Payload = res.syllabEncoder(4)
+	st.OutcomePayload = make([]byte, res.syllabLen()+4)
+	res.syllabEncoder(srpc.GetPayload(st.OutcomePayload))
 }
 
 // RevokePersonPublicKeyHTTP is HTTP handler of RevokePersonPublicKey service.
-func RevokePersonPublicKeyHTTP(s *achaemenid.Server, st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
+func RevokePersonPublicKeyHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
 	var req = &revokePersonPublicKeyReq{}
-	st.ReqRes.Err = req.jsonDecoder(httpReq.Body)
-	if st.ReqRes.Err != nil {
+	st.Err = req.jsonDecoder(httpReq.Body)
+	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
 	var res *revokePersonPublicKeyRes
-	res, st.ReqRes.Err = revokePersonPublicKey(st, req)
+	res, st.Err = revokePersonPublicKey(st, req)
 	// Check if any error occur in bussiness logic
-	if st.ReqRes.Err != nil {
+	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
-	httpRes.Body, st.ReqRes.Err = res.jsonEncoder()
-	// st.ReqRes.Err make occur on just memory full!
-
 	httpRes.SetStatus(http.StatusOKCode, http.StatusOKPhrase)
-	httpRes.Header.SetValue(http.HeaderKeyContentType, "application/json")
+	httpRes.Header.Set(http.HeaderKeyContentType, "application/json")
+	httpRes.Body = res.jsonEncoder()
 }
 
 type revokePersonPublicKeyReq struct {
-	PublicKey [32]byte `valid:"PublicKey"`
-	Password  [32]byte `valid:"Password"`
+	PublicKey [32]byte `valid:"PublicKey" json:",string"`
+	Password  [32]byte `valid:"Password" json:",string"`
 	OTP       uint32
 }
 
 type revokePersonPublicKeyRes struct{}
 
-func revokePersonPublicKey(st *achaemenid.Stream, req *revokePersonPublicKeyReq) (res *revokePersonPublicKeyRes, err error) {
-	// TODO::: Authenticate request first by service policy.
-
+func revokePersonPublicKey(st *achaemenid.Stream, req *revokePersonPublicKeyReq) (res *revokePersonPublicKeyRes, err *er.Error) {
 	err = st.Authorize()
 	if err != nil {
 		return
@@ -96,27 +107,35 @@ func revokePersonPublicKey(st *achaemenid.Stream, req *revokePersonPublicKeyReq)
 	return
 }
 
-func (req *revokePersonPublicKeyReq) validator() (err error) {
+func (req *revokePersonPublicKeyReq) validator() (err *er.Error) {
 	return
 }
 
-func (req *revokePersonPublicKeyReq) syllabDecoder(buf []byte) (err error) {
+func (req *revokePersonPublicKeyReq) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (req *revokePersonPublicKeyReq) jsonDecoder(buf []byte) (err error) {
-	// TODO::: Help to complete json generator package to have better performance!
+func (req *revokePersonPublicKeyReq) jsonDecoder(buf []byte) (err *er.Error) {
 	err = json.UnMarshal(buf, req)
 	return
 }
 
-// offset add free space by given number at begging of return slice that almost just use in sRPC protocol! It can be 0!!
-func (res *revokePersonPublicKeyRes) syllabEncoder(offset int) (buf []byte) {
+func (res *revokePersonPublicKeyRes) syllabEncoder(buf []byte) {
+}
+
+func (res *revokePersonPublicKeyRes) syllabStackLen() (ln uint32) {
+	return 0
+}
+
+func (res *revokePersonPublicKeyRes) syllabHeapLen() (ln uint32) {
 	return
 }
 
-func (res *revokePersonPublicKeyRes) jsonEncoder() (buf []byte, err error) {
-	// TODO::: Help to complete json generator package to have better performance!
-	buf, err = json.Marshal(res)
+func (res *revokePersonPublicKeyRes) syllabLen() (ln int) {
+	return int(res.syllabStackLen() + res.syllabHeapLen())
+}
+
+func (res *revokePersonPublicKeyRes) jsonEncoder() (buf []byte) {
+	buf, _ = json.Marshal(res)
 	return
 }

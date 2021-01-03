@@ -7,17 +7,17 @@ import (
 	"../libgo/achaemenid"
 	"../libgo/authorization"
 	er "../libgo/error"
-	"../libgo/ganjine"
 	"../libgo/http"
 	"../libgo/json"
 	lang "../libgo/language"
 	"../libgo/srpc"
 	"../libgo/syllab"
 	"../libgo/uuid"
+	"../libgo/validators"
 )
 
 var registerNewOrganizationService = achaemenid.Service{
-	ID:                3017822306,
+	ID:                2005182932,
 	IssueDate:         1604472315,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
@@ -30,10 +30,10 @@ var registerNewOrganizationService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Register New Organization",
+		lang.LanguageEnglish: "Register Organization",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
 		"OrganizationAuthentication",
@@ -85,11 +85,14 @@ func RegisterNewOrganizationHTTP(st *achaemenid.Stream, httpReq *http.Request, h
 }
 
 type registerNewOrganizationReq struct {
-	LeaderPersonID        [32]byte `json:",string"`
-	Name                  string   `valid:"OrgName"`
-	Domain                string   `valid:"Domain"`
-	FinancialCreditAmount int64
-	ServicesType          datastore.OrganizationAuthenticationType
+	SocietyID    [32]byte
+	ServicesType datastore.OrganizationAuthenticationType
+
+	Language lang.Language
+	Title    string `valid:"OrgName"`
+	Domain   string `valid:"Domain"`
+
+	LeaderPersonID [32]byte `json:",string"`
 }
 
 type registerNewOrganizationRes struct {
@@ -126,34 +129,49 @@ func registerNewOrganization(st *achaemenid.Stream, req *registerNewOrganization
 		return
 	}
 
-	err = checkOrgName(st, req.Name)
+	var oa = datastore.OrganizationAuthentication{
+		AppInstanceID:    achaemenid.Server.Nodes.LocalNode.InstanceID,
+		UserConnectionID: st.Connection.ID,
+		ID:               uuid.Random32Byte(),
+		SocietyID:        req.SocietyID,
+		ServicesType:     req.ServicesType,
+		Status:           datastore.OrganizationStatusRegister,
+	}
+	if req.SocietyID == [32]byte{} {
+		oa.SocietyID = achaemenid.Server.Manifest.SocietyUUID
+	} else if req.SocietyID != achaemenid.Server.Manifest.SocietyUUID {
+		oa.Status = datastore.OrganizationStatusRepresentative
+	}
+
+	err = checkQuiddityURI(st, req.Domain)
 	if err != nil {
 		return
 	}
-	err = checkOrgDomain(st, req.Domain)
+	var q = datastore.Quiddity{
+		AppInstanceID:    achaemenid.Server.Nodes.LocalNode.InstanceID,
+		UserConnectionID: st.Connection.ID,
+		ID:               uuid.Random32Byte(),
+		OrgID:            oa.ID,
+
+		Language: req.Language,
+		URI:      req.Domain,
+		Title:    req.Title,
+		Status:   datastore.QuiddityStatusRegister,
+	}
+	err = q.SaveNew()
 	if err != nil {
 		return
 	}
 
-	var oa = datastore.OrganizationAuthentication{
-		AppInstanceID:         server.Nodes.LocalNode.InstanceID,
-		UserConnectionID:      st.Connection.ID,
-		ID:                    uuid.Random32Byte(),
-		SocietyID:             server.Manifest.SocietyID,
-		Name:                  req.Name,
-		Domain:                req.Domain,
-		FinancialCreditAmount: req.FinancialCreditAmount,
-		ServicesType:          req.ServicesType,
-		Status:                datastore.OrganizationStatusRegister,
-	}
+	oa.QuiddityID = q.ID
 	err = oa.SaveNew()
 	if err != nil {
 		return
 	}
 
 	// make new connection for leader
-	var uac = datastore.UserAppsConnection{
-		Status:      datastore.UserAppsConnectionIssued,
+	var uac = datastore.UserAppConnection{
+		Status:      datastore.UserAppConnectionIssued,
 		Description: "Leader connection created in create organization",
 
 		ID: uuid.Random32Byte(),
@@ -178,76 +196,8 @@ func registerNewOrganization(st *achaemenid.Stream, req *registerNewOrganization
 }
 
 func (req *registerNewOrganizationReq) validator() (err *er.Error) {
-	return
-}
-
-func checkOrgName(st *achaemenid.Stream, name string) (err *er.Error) {
-	var goByNameReq = getOrganizationByNameReq{
-		Name: name,
-	}
-	var goByNameRes *getOrganizationByNameRes
-	goByNameRes, err = getOrganizationByName(st, &goByNameReq)
-	if err.Equal(ganjine.ErrRecordNotFound) {
-		return nil
-	}
-	if err != nil {
-		return
-	}
-
-	var goByIDReq = getOrganizationByIDReq{
-		ID: goByNameRes.ID,
-	}
-	var goByIDRes *getOrganizationByIDRes
-	goByIDRes, err = getOrganizationByID(st, &goByIDReq)
-	if err.Equal(ganjine.ErrRecordNotFound) {
-		// TODO::: how it is possible???
-		return nil
-	}
-	if err != nil {
-		return
-	}
-	if goByIDRes.Name != name {
-		return nil
-	}
-	if goByIDRes.Status != datastore.OrganizationStatusClosed {
-		err = ErrOrgNameRegistered
-		return
-	}
-	return
-}
-
-func checkOrgDomain(st *achaemenid.Stream, domain string) (err *er.Error) {
-	var goByDomainReq = getOrganizationByDomainReq{
-		Domain: domain,
-	}
-	var goByDomainRes *getOrganizationByDomainRes
-	goByDomainRes, err = getOrganizationByDomain(st, &goByDomainReq)
-	if err.Equal(ganjine.ErrRecordNotFound) {
-		return nil
-	}
-	if err != nil {
-		return
-	}
-
-	var goByIDReq = getOrganizationByIDReq{
-		ID: goByDomainRes.ID,
-	}
-	var goByIDRes *getOrganizationByIDRes
-	goByIDRes, err = getOrganizationByID(st, &goByIDReq)
-	if err.Equal(ganjine.ErrRecordNotFound) {
-		// TODO::: how it is possible???
-		return nil
-	}
-	if err != nil {
-		return
-	}
-	if goByIDRes.Domain != domain {
-		return nil
-	}
-	if goByIDRes.Status != datastore.OrganizationStatusClosed {
-		err = ErrOrgDomainRegistered
-		return
-	}
+	err = validators.ValidateText(req.Title, 0, 100)
+	err = validators.ValidateText(req.Domain, 0, 100)
 	return
 }
 
@@ -261,31 +211,37 @@ func (req *registerNewOrganizationReq) syllabDecoder(buf []byte) (err *er.Error)
 		return
 	}
 
-	copy(req.LeaderPersonID[:], buf[0:])
-	req.Name = syllab.UnsafeGetString(buf, 32)
-	req.Domain = syllab.UnsafeGetString(buf, 40)
-	req.FinancialCreditAmount = syllab.GetInt64(buf, 48)
-	req.ServicesType = datastore.OrganizationAuthenticationType(syllab.GetUInt8(buf, 56))
+	copy(req.SocietyID[:], buf[0:])
+	req.ServicesType = datastore.OrganizationAuthenticationType(syllab.GetUInt8(buf, 32))
+
+	req.Language = lang.Language(syllab.GetUInt32(buf, 33))
+	req.Title = syllab.UnsafeGetString(buf, 37)
+	req.Domain = syllab.UnsafeGetString(buf, 45)
+
+	copy(req.LeaderPersonID[:], buf[53:])
 	return
 }
 
 func (req *registerNewOrganizationReq) syllabEncoder(buf []byte) {
 	var hsi uint32 = req.syllabStackLen() // Heap start index || Stack size!
 
-	copy(buf[0:], req.LeaderPersonID[:])
-	hsi = syllab.SetString(buf, req.Name, 32, hsi)
-	hsi = syllab.SetString(buf, req.Domain, 40, hsi)
-	syllab.SetInt64(buf, 48, req.FinancialCreditAmount)
-	syllab.SetUInt8(buf, 56, uint8(req.ServicesType))
+	copy(buf[0:], req.SocietyID[:])
+	syllab.SetUInt8(buf, 32, uint8(req.ServicesType))
+
+	syllab.SetUInt32(buf, 33, uint32(req.Language))
+	hsi = syllab.SetString(buf, req.Title, 37, hsi)
+	hsi = syllab.SetString(buf, req.Domain, 45, hsi)
+
+	copy(buf[53:], req.LeaderPersonID[:])
 	return
 }
 
 func (req *registerNewOrganizationReq) syllabStackLen() (ln uint32) {
-	return 57
+	return 85
 }
 
 func (req *registerNewOrganizationReq) syllabHeapLen() (ln uint32) {
-	ln += uint32(len(req.Name))
+	ln += uint32(len(req.Title))
 	ln += uint32(len(req.Domain))
 	return
 }
@@ -298,44 +254,32 @@ func (req *registerNewOrganizationReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'L':
-			decoder.SetFounded()
-			decoder.Offset(17)
-			err = decoder.DecodeByteArrayAsBase64(req.LeaderPersonID[:])
-			if err != nil {
-				return
-			}
-		case 'F':
-			decoder.SetFounded()
-			decoder.Offset(23)
-			req.FinancialCreditAmount, err = decoder.DecodeInt64()
-			if err != nil {
-				return
-			}
-		case 'N':
-			decoder.SetFounded()
-			decoder.Offset(7)
-			req.Name = decoder.DecodeString()
-		case 'D':
-			decoder.SetFounded()
-			decoder.Offset(9)
-			req.Domain = decoder.DecodeString()
-		case 'S':
-			decoder.SetFounded()
-			decoder.Offset(14)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "SocietyID":
+			err = decoder.DecodeByteArrayAsNumber(req.SocietyID[:])
+		case "ServicesType":
 			var num uint8
 			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
 			req.ServicesType = datastore.OrganizationAuthenticationType(num)
+
+		case "Language":
+			var num uint32
+			num, err = decoder.DecodeUInt32()
+			req.Language = lang.Language(num)
+		case "Title":
+			req.Title, err = decoder.DecodeString()
+		case "Domain":
+			req.Domain, err = decoder.DecodeString()
+
+		case "LeaderPersonID":
+			err = decoder.DecodeByteArrayAsBase64(req.LeaderPersonID[:])
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -347,28 +291,28 @@ func (req *registerNewOrganizationReq) jsonEncoder() (buf []byte) {
 		Buf: make([]byte, 0, req.jsonLen()),
 	}
 
-	encoder.EncodeString(`{"LeaderPersonID":"`)
-	encoder.EncodeByteSliceAsBase64(req.LeaderPersonID[:])
+	encoder.EncodeString(`{"SocietyID":[`)
+	encoder.EncodeByteSliceAsNumber(req.SocietyID[:])
+	encoder.EncodeString(`],"ServicesType":`)
+	encoder.EncodeUInt8(uint8(req.ServicesType))
 
-	encoder.EncodeString(`","Name":"`)
-	encoder.EncodeString(req.Name)
-
+	encoder.EncodeString(`,"Language":`)
+	encoder.EncodeUInt32(uint32(req.Language))
+	encoder.EncodeString(`,"Title":"`)
+	encoder.EncodeString(req.Title)
 	encoder.EncodeString(`","Domain":"`)
 	encoder.EncodeString(req.Domain)
 
-	encoder.EncodeString(`","FinancialCreditAmount":`)
-	encoder.EncodeInt64(req.FinancialCreditAmount)
-
-	encoder.EncodeString(`,"ServicesType":`)
-	encoder.EncodeUInt8(uint8(req.ServicesType))
+	encoder.EncodeString(`","LeaderPersonID":"`)
+	encoder.EncodeByteSliceAsBase64(req.LeaderPersonID[:])
 
 	encoder.EncodeByte('}')
 	return encoder.Buf
 }
 
 func (req *registerNewOrganizationReq) jsonLen() (ln int) {
-	ln = len(req.Name) + len(req.Domain)
-	ln += 185
+	ln = len(req.Title) + len(req.Domain)
+	ln += 271
 	return
 }
 
@@ -407,20 +351,16 @@ func (res *registerNewOrganizationRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(5)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "ID":
 			err = decoder.DecodeByteArrayAsBase64(res.ID[:])
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}

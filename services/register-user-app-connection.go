@@ -13,26 +13,30 @@ import (
 	"../libgo/srpc"
 	"../libgo/syllab"
 	"../libgo/uuid"
+	"../libgo/validators"
 )
 
 var registerUserAppConnectionService = achaemenid.Service{
 	ID:                2264014142,
-	URI:               "", // API services can set like "/apis?2264014142" but it is not efficient, find services by ID.
-	CRUD:              authorization.CRUDCreate,
 	IssueDate:         1603876567,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
 
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDCreate,
+		UserType: authorization.UserTypeAll ^ authorization.UserTypeGuest,
+	},
+
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Register User App Connection",
+		lang.LanguageEnglish: "Register User App Connection",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
-		"UserAppsConnection",
+		"UserAppConnection",
 	},
 
 	SRPCHandler: RegisterUserAppConnectionSRPC,
@@ -81,12 +85,12 @@ func RegisterUserAppConnectionHTTP(st *achaemenid.Stream, httpReq *http.Request,
 }
 
 type registerUserAppConnectionReq struct {
-	Description string
+	Description string `valid:"text[0:50]"`
 	Weight      achaemenid.Weight
 
 	ThingID          [32]byte `json:",string"`
 	DelegateUserID   [32]byte `json:",string"`
-	DelegateUserType achaemenid.UserType
+	DelegateUserType authorization.UserType
 
 	PublicKey     [32]byte `json:",string"`
 	AccessControl authorization.AccessControl
@@ -97,28 +101,39 @@ type registerUserAppConnectionRes struct {
 }
 
 func registerUserAppConnection(st *achaemenid.Stream, req *registerUserAppConnectionReq) (res *registerUserAppConnectionRes, err *er.Error) {
-	if st.Connection.UserType == achaemenid.UserTypeGuest {
-		err = authorization.ErrAuthorizationUserNotAllow
-		return
-	}
-	// User can't delegate to yourself!
-	if req.DelegateUserID == st.Connection.UserID {
-		err = authorization.ErrAuthorizationNotAllowToDelegate
-		return
-	}
-	// Person user type can't delegate to register new connection
-	if st.Connection.UserType == achaemenid.UserTypePerson && st.Connection.DelegateUserType != achaemenid.UserTypeUnset {
-		err = authorization.ErrAuthorizationNotAllowToDelegate
-		return
-	}
-
 	err = st.Authorize()
 	if err != nil {
 		return
 	}
+	// Validate data here due to service use internally by other services!
+	err = req.validator()
+	if err != nil {
+		return
+	}
 
-	var uac = datastore.UserAppsConnection{
-		Status:      datastore.UserAppsConnectionIssued,
+	// User can't delegate to yourself!
+	if req.DelegateUserID == st.Connection.UserID {
+		err = authorization.ErrNotAllowToDelegate
+		return
+	}
+	// Person user type can't delegate to register new connection
+	if st.Connection.UserType == authorization.UserTypePerson && st.Connection.DelegateUserType != authorization.UserTypeUnset {
+		err = authorization.ErrNotAllowToDelegate
+		return
+	}
+	// Org Connection can't be empty UserDelegateID
+	if st.Connection.UserType == authorization.UserTypeOrg && req.DelegateUserID == [32]byte{} {
+		err = authorization.ErrNotAllowToNotDelegate
+		return
+	}
+	// Org Connection can't delegate to other org
+	if st.Connection.UserType == authorization.UserTypeOrg && req.DelegateUserType == authorization.UserTypeOrg {
+		err = authorization.ErrNotAllowToDelegate
+		return
+	}
+
+	var uac = datastore.UserAppConnection{
+		Status:      datastore.UserAppConnectionIssued,
 		Description: req.Description,
 
 		ID:     uuid.Random32Byte(),
@@ -133,31 +148,20 @@ func registerUserAppConnection(st *achaemenid.Stream, req *registerUserAppConnec
 		PeerPublicKey: req.PublicKey,
 		AccessControl: req.AccessControl,
 	}
-	err = uac.Set()
+	err = uac.SaveNew()
 	if err != nil {
 		return
-	}
-
-	uac.IndexID()
-	if req.ThingID != [32]byte{} {
-		uac.IndexIDforThingID()
-		uac.IndexIDforUserIDThingID()
-		uac.ListThingIDforUserID()
-		uac.ListUserIDforThingID()
-	}
-	if req.DelegateUserID != [32]byte{} {
-		uac.IndexIDforDelegateUserID()
-		uac.IndexIDforUserIDDelegateUserID()
-		uac.IndexIDforUserIDifDelegateUserID()
-		uac.ListDelegateUserIDforUserID()
-	} else {
-		uac.IndexIDforUserID()
 	}
 
 	res = &registerUserAppConnectionRes{
 		ID: uac.ID,
 	}
 
+	return
+}
+
+func (req *registerUserAppConnectionReq) validator() (err *er.Error) {
+	err = validators.ValidateText(req.Description, 0, 50)
 	return
 }
 
@@ -175,7 +179,7 @@ func (req *registerUserAppConnectionReq) syllabDecoder(buf []byte) (err *er.Erro
 	req.Weight = achaemenid.Weight(syllab.GetUInt8(buf, 8))
 	copy(req.ThingID[:], buf[9:])
 	copy(req.DelegateUserID[:], buf[41:])
-	req.DelegateUserType = achaemenid.UserType(syllab.GetUInt8(buf, 73))
+	req.DelegateUserType = authorization.UserType(syllab.GetUInt8(buf, 73))
 	copy(req.PublicKey[:], buf[74:])
 	req.AccessControl.SyllabDecoder(buf, 106)
 	return
@@ -212,69 +216,34 @@ func (req *registerUserAppConnectionReq) jsonDecoder(buf []byte) (err *er.Error)
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'D':
-			switch decoder.Buf[2] {
-			case 's':
-				decoder.SetFounded()
-				decoder.Offset(14)
-				req.Description = decoder.DecodeString()
-			case 'l':
-				switch decoder.Buf[12] {
-				case 'I':
-					decoder.SetFounded()
-					decoder.Offset(17)
-					err = decoder.DecodeByteArrayAsBase64(req.DelegateUserID[:])
-					if err != nil {
-						return
-					}
-				case 'T':
-					decoder.SetFounded()
-					decoder.Offset(18)
-					var num uint8
-					num, err = decoder.DecodeUInt8()
-					if err != nil {
-						return
-					}
-					req.DelegateUserType = achaemenid.UserType(num)
-				}
-			}
-		case 'W':
-			decoder.SetFounded()
-			decoder.Offset(8)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "Description":
+			req.Description, err = decoder.DecodeString()
+		case "Weight":
 			var num uint8
 			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
 			req.Weight = achaemenid.Weight(num)
-		case 'T':
-			decoder.SetFounded()
-			decoder.Offset(10)
+		case "ThingID":
 			err = decoder.DecodeByteArrayAsBase64(req.ThingID[:])
-			if err != nil {
-				return
-			}
-		case 'P':
-			decoder.SetFounded()
-			decoder.Offset(12)
+		case "DelegateUserID":
+			err = decoder.DecodeByteArrayAsBase64(req.DelegateUserID[:])
+		case "DelegateUserType":
+			var num uint8
+			num, err = decoder.DecodeUInt8()
+			req.DelegateUserType = authorization.UserType(num)
+		case "PublicKey":
 			err = decoder.DecodeByteArrayAsBase64(req.PublicKey[:])
-			if err != nil {
-				return
-			}
-		case 'A':
-			decoder.SetFounded()
-			decoder.Offset(16)
-			decoder.Buf, err = req.AccessControl.JSONDecoder(decoder.Buf)
-			if err != nil {
-				return
-			}
+
+		case "AccessControl":
+			err = req.AccessControl.JSONDecoder(decoder)
+
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -290,7 +259,7 @@ func (req *registerUserAppConnectionReq) jsonEncoder() (buf []byte) {
 	encoder.EncodeString(req.Description)
 
 	encoder.EncodeString(`","Weight":`)
-	encoder.EncodeUInt64(uint64(req.Weight))
+	encoder.EncodeUInt8(uint8(req.Weight))
 
 	encoder.EncodeString(`,"ThingID":"`)
 	encoder.EncodeByteSliceAsBase64(req.ThingID[:])
@@ -299,13 +268,13 @@ func (req *registerUserAppConnectionReq) jsonEncoder() (buf []byte) {
 	encoder.EncodeByteSliceAsBase64(req.DelegateUserID[:])
 
 	encoder.EncodeString(`","DelegateUserType":`)
-	encoder.EncodeUInt64(uint64(req.DelegateUserType))
+	encoder.EncodeUInt8(uint8(req.DelegateUserType))
 
 	encoder.EncodeString(`,"PublicKey":"`)
 	encoder.EncodeByteSliceAsBase64(req.PublicKey[:])
 
 	encoder.EncodeString(`","AccessControl":`)
-	encoder.Buf = req.AccessControl.JSONEncoder(encoder.Buf)
+	req.AccessControl.JSONEncoder(encoder)
 
 	encoder.EncodeByte('}')
 	return encoder.Buf
@@ -314,7 +283,7 @@ func (req *registerUserAppConnectionReq) jsonEncoder() (buf []byte) {
 func (req *registerUserAppConnectionReq) jsonLen() (ln int) {
 	ln = len(req.Description)
 	ln += req.AccessControl.JSONLen()
-	ln += 285
+	ln += 251
 	return
 }
 
@@ -353,20 +322,16 @@ func (res *registerUserAppConnectionRes) jsonDecoder(buf []byte) (err *er.Error)
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(5)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "ID":
 			err = decoder.DecodeByteArrayAsBase64(res.ID[:])
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}

@@ -4,74 +4,87 @@ package services
 
 import (
 	"../libgo/achaemenid"
+	"../libgo/authorization"
+	er "../libgo/error"
 	"../libgo/http"
 	"../libgo/json"
+	lang "../libgo/language"
+	"../libgo/srpc"
 )
 
 var blockPersonService = achaemenid.Service{
 	ID:                4173689325,
-	URI:               "", // API services can set like "/apis?4173689325" but it is not efficient, find services by ID.
-	Name:              "BlockPerson",
 	IssueDate:         1592390222,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "",
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
-	Description: []string{
-		"Just judges (justice service) can request to block a person and in many blocking level",
+
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDUpdate,
+		UserType: authorization.UserTypeAll,
 	},
-	TAGS:        []string{"Authentication"},
+
+	Name: map[lang.Language]string{
+		lang.LanguageEnglish: "BlockPerson",
+	},
+	Description: map[lang.Language]string{
+		lang.LanguageEnglish: "Just judges (justice service) can request to block a person and in many blocking level",
+	},
+	TAGS: []string{
+		"PersonAuthentication",
+	},
+
 	SRPCHandler: BlockPersonSRPC,
 	HTTPHandler: BlockPersonHTTP,
 }
 
 // BlockPersonSRPC is sRPC handler of BlockPerson service.
-func BlockPersonSRPC(s *achaemenid.Server, st *achaemenid.Stream) {
+func BlockPersonSRPC(st *achaemenid.Stream) {
 	var req = &blockPersonReq{}
-	st.ReqRes.Err = req.syllabDecoder(st.Payload[4:])
-	if st.ReqRes.Err != nil {
+	st.Err = req.syllabDecoder(srpc.GetPayload(st.IncomePayload))
+	if st.Err != nil {
 		return
 	}
 
 	var res *blockPersonRes
-	res, st.ReqRes.Err = blockPerson(st, req)
+	res, st.Err = blockPerson(st, req)
 	// Check if any error occur in bussiness logic
-	if st.ReqRes.Err != nil {
+	if st.Err != nil {
 		return
 	}
 
-	st.ReqRes.Payload = res.syllabEncoder(4)
+	st.OutcomePayload = make([]byte, res.syllabLen()+4)
+	res.syllabEncoder(srpc.GetPayload(st.OutcomePayload))
 }
 
 // BlockPersonHTTP is HTTP handler of BlockPerson service.
-func BlockPersonHTTP(s *achaemenid.Server, st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
+func BlockPersonHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
 	var req = &blockPersonReq{}
-	st.ReqRes.Err = req.jsonDecoder(httpReq.Body)
-	if st.ReqRes.Err != nil {
+	st.Err = req.jsonDecoder(httpReq.Body)
+	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
 	var res *blockPersonRes
-	res, st.ReqRes.Err = blockPerson(st, req)
+	res, st.Err = blockPerson(st, req)
 	// Check if any error occur in bussiness logic
-	if st.ReqRes.Err != nil {
+	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
-	httpRes.Body, st.ReqRes.Err = res.jsonEncoder()
-	// st.ReqRes.Err make occur on just memory full!
-
 	httpRes.SetStatus(http.StatusOKCode, http.StatusOKPhrase)
-	httpRes.Header.SetValue(http.HeaderKeyContentType, "application/json")
+	httpRes.Header.Set(http.HeaderKeyContentType, "application/json")
+	httpRes.Body = res.jsonEncoder()
 }
 
 type blockPersonReq struct{}
 
 type blockPersonRes struct{}
 
-func blockPerson(st *achaemenid.Stream, req *blockPersonReq) (res *blockPersonRes, err error) {
+func blockPerson(st *achaemenid.Stream, req *blockPersonReq) (res *blockPersonRes, err *er.Error) {
 	// TODO::: Authenticate request first by service policy.
 
 	err = st.Authorize()
@@ -93,27 +106,36 @@ func blockPerson(st *achaemenid.Stream, req *blockPersonReq) (res *blockPersonRe
 	return
 }
 
-func (req *blockPersonReq) validator() (err error) {
+func (req *blockPersonReq) validator() (err *er.Error) {
 	return
 }
 
-func (req *blockPersonReq) syllabDecoder(buf []byte) (err error) {
+func (req *blockPersonReq) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (req *blockPersonReq) jsonDecoder(buf []byte) (err error) {
-	// TODO::: Help to complete json generator package to have better performance!
+func (req *blockPersonReq) jsonDecoder(buf []byte) (err *er.Error) {
 	err = json.UnMarshal(buf, req)
 	return
 }
 
-// offset add free space by given number at begging of return slice that almost just use in sRPC protocol! It can be 0!!
-func (res *blockPersonRes) syllabEncoder(offset int) (buf []byte) {
+func (res *blockPersonRes) syllabEncoder(buf []byte) {
 	return
 }
 
-func (res *blockPersonRes) jsonEncoder() (buf []byte, err error) {
-	// TODO::: Help to complete json generator package to have better performance!
-	buf, err = json.Marshal(res)
+func (res *blockPersonRes) syllabStackLen() (ln uint32) {
+	return 0
+}
+
+func (res *blockPersonRes) syllabHeapLen() (ln uint32) {
+	return
+}
+
+func (res *blockPersonRes) syllabLen() (ln int) {
+	return int(res.syllabStackLen() + res.syllabHeapLen())
+}
+
+func (res *blockPersonRes) jsonEncoder() (buf []byte) {
+	buf, _ = json.Marshal(res)
 	return
 }

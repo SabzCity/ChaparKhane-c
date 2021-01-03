@@ -6,6 +6,7 @@ import (
 	"../datastore"
 	"../libgo/achaemenid"
 	"../libgo/authorization"
+	etime "../libgo/earth-time"
 	er "../libgo/error"
 	"../libgo/ganjine"
 	"../libgo/http"
@@ -17,19 +18,22 @@ import (
 
 var getPersonNumberService = achaemenid.Service{
 	ID:                500496613,
-	URI:               "", // API services can set like "/apis?500496613" but it is not efficient, find services by ID.
-	CRUD:              authorization.CRUDRead,
 	IssueDate:         1603724046,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
 
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDRead,
+		UserType: authorization.UserTypePerson,
+	},
+
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Get Person Number",
+		lang.LanguageEnglish: "Get Person Number",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
 		"PersonNumber",
@@ -68,7 +72,7 @@ func GetPersonNumberHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *
 }
 
 type getPersonNumberRes struct {
-	WriteTime        int64
+	WriteTime        etime.Time
 	AppInstanceID    [32]byte `json:",string"`
 	UserConnectionID [32]byte `json:",string"`
 	Number           uint64
@@ -76,33 +80,30 @@ type getPersonNumberRes struct {
 }
 
 func getPersonNumber(st *achaemenid.Stream) (res *getPersonNumberRes, err *er.Error) {
-	if st.Connection.UserType != achaemenid.UserTypePerson {
-		err = authorization.ErrAuthorizationUserNotAllow
-		return
-	}
-
 	err = st.Authorize()
 	if err != nil {
 		return
 	}
 
+	// By use st.Connection.UserID just active user can retrieve number that own and don't need to check it anymore!
 	var pn = datastore.PersonNumber{
 		PersonID: st.Connection.UserID,
 	}
 	err = pn.GetLastByPersonID()
 	if err != nil {
-		if err != ganjine.ErrGanjineRecordNotFound {
-			err = ErrPlatformBadSituation
+		if !err.Equal(ganjine.ErrRecordNotFound) {
+			err = ErrBadSituation
 		}
 		return
 	}
 
 	res = &getPersonNumberRes{
-		WriteTime:        pn.WriteTime,
-		AppInstanceID:    pn.AppInstanceID,
-		UserConnectionID: pn.UserConnectionID,
-		Number:           pn.Number,
-		Status:           pn.Status,
+		WriteTime:     pn.WriteTime,
+		AppInstanceID: pn.AppInstanceID,
+		// UserConnectionID: pn.UserConnectionID,  TODO::: Due to HTTP use ConnectionID to authenticate connections can't enable it now!!
+
+		Number: pn.Number,
+		Status: pn.Status,
 	}
 	return
 }
@@ -117,7 +118,7 @@ func (res *getPersonNumberRes) syllabDecoder(buf []byte) (err *er.Error) {
 		return
 	}
 
-	res.WriteTime = syllab.GetInt64(buf, 0)
+	res.WriteTime = etime.Time(syllab.GetInt64(buf, 0))
 	copy(res.AppInstanceID[:], buf[8:])
 	copy(res.UserConnectionID[:], buf[40:])
 	res.Number = syllab.GetUInt64(buf, 72)
@@ -126,7 +127,7 @@ func (res *getPersonNumberRes) syllabDecoder(buf []byte) (err *er.Error) {
 }
 
 func (res *getPersonNumberRes) syllabEncoder(buf []byte) {
-	syllab.SetInt64(buf, 0, res.WriteTime)
+	syllab.SetInt64(buf, 0, int64(res.WriteTime))
 	copy(buf[8:], res.AppInstanceID[:])
 	copy(buf[40:], res.UserConnectionID[:])
 	syllab.SetUInt64(buf, 72, res.Number)
@@ -150,54 +151,28 @@ func (res *getPersonNumberRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'W':
-			decoder.SetFounded()
-			decoder.Offset(11)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "WriteTime":
 			var num int64
 			num, err = decoder.DecodeInt64()
-			if err != nil {
-				return
-			}
-			res.WriteTime = int64(num)
-		case 'A':
-			decoder.SetFounded()
-			decoder.Offset(16)
+			res.WriteTime = etime.Time(num)
+		case "AppInstanceID":
 			err = decoder.DecodeByteArrayAsBase64(res.AppInstanceID[:])
-			if err != nil {
-				return
-			}
-		case 'U':
-			decoder.SetFounded()
-			decoder.Offset(19)
+		case "UserConnectionID":
 			err = decoder.DecodeByteArrayAsBase64(res.UserConnectionID[:])
-			if err != nil {
-				return
-			}
-		case 'N':
-			decoder.SetFounded()
-			decoder.Offset(8)
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-			res.Number = uint64(num)
-		case 'S':
-			decoder.SetFounded()
-			decoder.Offset(8)
+		case "Number":
+			res.Number, err = decoder.DecodeUInt64()
+		case "Status":
 			var num uint8
 			num, err = decoder.DecodeUInt8()
-			if err != nil {
-				return
-			}
 			res.Status = datastore.PersonNumberStatus(num)
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
@@ -219,7 +194,7 @@ func (res *getPersonNumberRes) jsonEncoder() (buf []byte) {
 	encoder.EncodeByteSliceAsBase64(res.UserConnectionID[:])
 
 	encoder.EncodeString(`","Number":`)
-	encoder.EncodeUInt64(uint64(res.Number))
+	encoder.EncodeUInt64(res.Number)
 
 	encoder.EncodeString(`,"Status":`)
 	encoder.EncodeUInt8(uint8(res.Status))
@@ -229,6 +204,6 @@ func (res *getPersonNumberRes) jsonEncoder() (buf []byte) {
 }
 
 func (res *getPersonNumberRes) jsonLen() (ln int) {
-	ln = 20 + 43 + 43 + 20 + 3 + 75
+	ln = 187
 	return
 }

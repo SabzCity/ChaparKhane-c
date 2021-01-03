@@ -14,9 +14,9 @@ import (
 	"../libgo/syllab"
 )
 
-var findProductAuctionByGroupIDService = achaemenid.Service{
-	ID:                1090095758,
-	IssueDate:         1605202753,
+var findProductAuctionByQuiddityIDGroupIDService = achaemenid.Service{
+	ID:                79942143,
+	IssueDate:         1605202810,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
 	ExpireInFavorOfID: 0,
@@ -28,7 +28,7 @@ var findProductAuctionByGroupIDService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.LanguageEnglish: "Find Product Auction By Group ID",
+		lang.LanguageEnglish: "Find Product Auction By Quiddity ID Group ID",
 	},
 	Description: map[lang.Language]string{
 		lang.LanguageEnglish: "",
@@ -37,20 +37,20 @@ var findProductAuctionByGroupIDService = achaemenid.Service{
 		"ProductAuction",
 	},
 
-	SRPCHandler: FindProductAuctionByGroupIDSRPC,
-	HTTPHandler: FindProductAuctionByGroupIDHTTP,
+	SRPCHandler: FindProductAuctionByQuiddityIDGroupIDSRPC,
+	HTTPHandler: FindProductAuctionByQuiddityIDGroupIDHTTP,
 }
 
-// FindProductAuctionByGroupIDSRPC is sRPC handler of FindProductAuctionByGroupID service.
-func FindProductAuctionByGroupIDSRPC(st *achaemenid.Stream) {
-	var req = &findProductAuctionByGroupIDReq{}
+// FindProductAuctionByQuiddityIDGroupIDSRPC is sRPC handler of FindProductAuctionByQuiddityIDGroupID service.
+func FindProductAuctionByQuiddityIDGroupIDSRPC(st *achaemenid.Stream) {
+	var req = &findProductAuctionByQuiddityIDGroupIDReq{}
 	st.Err = req.syllabDecoder(srpc.GetPayload(st.IncomePayload))
 	if st.Err != nil {
 		return
 	}
 
-	var res *findProductAuctionByGroupIDRes
-	res, st.Err = findProductAuctionByGroupID(st, req)
+	var res *findProductAuctionByQuiddityIDGroupIDRes
+	res, st.Err = findProductAuctionByQuiddityIDGroupID(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		return
@@ -60,17 +60,17 @@ func FindProductAuctionByGroupIDSRPC(st *achaemenid.Stream) {
 	res.syllabEncoder(srpc.GetPayload(st.OutcomePayload))
 }
 
-// FindProductAuctionByGroupIDHTTP is HTTP handler of FindProductAuctionByGroupID service.
-func FindProductAuctionByGroupIDHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
-	var req = &findProductAuctionByGroupIDReq{}
+// FindProductAuctionByQuiddityIDGroupIDHTTP is HTTP handler of FindProductAuctionByQuiddityIDGroupID service.
+func FindProductAuctionByQuiddityIDGroupIDHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
+	var req = &findProductAuctionByQuiddityIDGroupIDReq{}
 	st.Err = req.jsonDecoder(httpReq.Body)
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
-	var res *findProductAuctionByGroupIDRes
-	res, st.Err = findProductAuctionByGroupID(st, req)
+	var res *findProductAuctionByQuiddityIDGroupIDRes
+	res, st.Err = findProductAuctionByQuiddityIDGroupID(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
@@ -82,31 +82,37 @@ func FindProductAuctionByGroupIDHTTP(st *achaemenid.Stream, httpReq *http.Reques
 	httpRes.Body = res.jsonEncoder()
 }
 
-type findProductAuctionByGroupIDReq struct {
-	GroupID [32]byte `json:",string"`
-	Offset  uint64
-	Limit   uint64
+type findProductAuctionByQuiddityIDGroupIDReq struct {
+	QuiddityID [32]byte `json:",string"`
+	GroupID    [32]byte `json:",string"`
+	Offset     uint64
+	Limit      uint64
 }
 
-type findProductAuctionByGroupIDRes struct {
+type findProductAuctionByQuiddityIDGroupIDRes struct {
 	IDs [][32]byte `json:",string"`
 }
 
-func findProductAuctionByGroupID(st *achaemenid.Stream, req *findProductAuctionByGroupIDReq) (res *findProductAuctionByGroupIDRes, err *er.Error) {
+func findProductAuctionByQuiddityIDGroupID(st *achaemenid.Stream, req *findProductAuctionByQuiddityIDGroupIDReq) (res *findProductAuctionByQuiddityIDGroupIDRes, err *er.Error) {
 	var pa = datastore.ProductAuction{
+		QuiddityID: req.QuiddityID,
 		Authorization: authorization.Product{
 			GroupID: req.GroupID,
 		},
 	}
 	var indexRes [][32]byte
-	indexRes, err = pa.FindIDsByGroupID(req.Offset, req.Limit)
+	indexRes, err = pa.FindIDsByQuiddityIDGroupID(req.Offset, req.Limit)
 	if err != nil {
 		return
 	}
 
-	res = &findProductAuctionByGroupIDRes{
+	res = &findProductAuctionByQuiddityIDGroupIDRes{
 		IDs: indexRes,
 	}
+	return
+}
+
+func (req *findProductAuctionByQuiddityIDGroupIDReq) validator() (err *er.Error) {
 	return
 }
 
@@ -114,44 +120,48 @@ func findProductAuctionByGroupID(st *achaemenid.Stream, req *findProductAuctionB
 	Request Encoders & Decoders
 */
 
-func (req *findProductAuctionByGroupIDReq) syllabDecoder(buf []byte) (err *er.Error) {
+func (req *findProductAuctionByQuiddityIDGroupIDReq) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < req.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
 	}
 
-	copy(req.GroupID[:], buf[0:])
-	req.Offset = syllab.GetUInt64(buf, 32)
-	req.Limit = syllab.GetUInt64(buf, 40)
+	copy(req.QuiddityID[:], buf[0:])
+	copy(req.GroupID[:], buf[32:])
+	req.Offset = syllab.GetUInt64(buf, 64)
+	req.Limit = syllab.GetUInt64(buf, 72)
 	return
 }
 
-func (req *findProductAuctionByGroupIDReq) syllabEncoder(buf []byte) {
-	copy(buf[0:], req.GroupID[:])
-	syllab.SetUInt64(buf, 32, req.Offset)
-	syllab.SetUInt64(buf, 40, req.Limit)
+func (req *findProductAuctionByQuiddityIDGroupIDReq) syllabEncoder(buf []byte) {
+	copy(buf[0:], req.QuiddityID[:])
+	copy(buf[32:], req.GroupID[:])
+	syllab.SetUInt64(buf, 64, req.Offset)
+	syllab.SetUInt64(buf, 72, req.Limit)
 	return
 }
 
-func (req *findProductAuctionByGroupIDReq) syllabStackLen() (ln uint32) {
-	return 48
+func (req *findProductAuctionByQuiddityIDGroupIDReq) syllabStackLen() (ln uint32) {
+	return 80
 }
 
-func (req *findProductAuctionByGroupIDReq) syllabHeapLen() (ln uint32) {
+func (req *findProductAuctionByQuiddityIDGroupIDReq) syllabHeapLen() (ln uint32) {
 	return
 }
 
-func (req *findProductAuctionByGroupIDReq) syllabLen() (ln int) {
+func (req *findProductAuctionByQuiddityIDGroupIDReq) syllabLen() (ln int) {
 	return int(req.syllabStackLen() + req.syllabHeapLen())
 }
 
-func (req *findProductAuctionByGroupIDReq) jsonDecoder(buf []byte) (err *er.Error) {
+func (req *findProductAuctionByQuiddityIDGroupIDReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
 	for err == nil {
 		var keyName = decoder.DecodeKey()
 		switch keyName {
+		case "QuiddityID":
+			err = decoder.DecodeByteArrayAsBase64(req.QuiddityID[:])
 		case "GroupID":
 			err = decoder.DecodeByteArrayAsBase64(req.GroupID[:])
 		case "Offset":
@@ -169,12 +179,15 @@ func (req *findProductAuctionByGroupIDReq) jsonDecoder(buf []byte) (err *er.Erro
 	return
 }
 
-func (req *findProductAuctionByGroupIDReq) jsonEncoder() (buf []byte) {
+func (req *findProductAuctionByQuiddityIDGroupIDReq) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, req.jsonLen()),
 	}
 
-	encoder.EncodeString(`{"GroupID":"`)
+	encoder.EncodeString(`{"QuiddityID":"`)
+	encoder.EncodeByteSliceAsBase64(req.QuiddityID[:])
+
+	encoder.EncodeString(`","GroupID":"`)
 	encoder.EncodeByteSliceAsBase64(req.GroupID[:])
 
 	encoder.EncodeString(`","Offset":`)
@@ -187,8 +200,8 @@ func (req *findProductAuctionByGroupIDReq) jsonEncoder() (buf []byte) {
 	return encoder.Buf
 }
 
-func (req *findProductAuctionByGroupIDReq) jsonLen() (ln int) {
-	ln = 116
+func (req *findProductAuctionByQuiddityIDGroupIDReq) jsonLen() (ln int) {
+	ln = 171
 	return
 }
 
@@ -196,7 +209,7 @@ func (req *findProductAuctionByGroupIDReq) jsonLen() (ln int) {
 	Response Encoders & Decoders
 */
 
-func (res *findProductAuctionByGroupIDRes) syllabDecoder(buf []byte) (err *er.Error) {
+func (res *findProductAuctionByQuiddityIDGroupIDRes) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < res.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -206,27 +219,27 @@ func (res *findProductAuctionByGroupIDRes) syllabDecoder(buf []byte) (err *er.Er
 	return
 }
 
-func (res *findProductAuctionByGroupIDRes) syllabEncoder(buf []byte) {
+func (res *findProductAuctionByQuiddityIDGroupIDRes) syllabEncoder(buf []byte) {
 	var hsi uint32 = res.syllabStackLen() // Heap start index || Stack size!
 
 	syllab.Set32ByteArrayArray(buf, res.IDs, 0, hsi)
 	return
 }
 
-func (res *findProductAuctionByGroupIDRes) syllabStackLen() (ln uint32) {
+func (res *findProductAuctionByQuiddityIDGroupIDRes) syllabStackLen() (ln uint32) {
 	return 8
 }
 
-func (res *findProductAuctionByGroupIDRes) syllabHeapLen() (ln uint32) {
+func (res *findProductAuctionByQuiddityIDGroupIDRes) syllabHeapLen() (ln uint32) {
 	ln = uint32(len(res.IDs) * 32)
 	return
 }
 
-func (res *findProductAuctionByGroupIDRes) syllabLen() (ln int) {
+func (res *findProductAuctionByQuiddityIDGroupIDRes) syllabLen() (ln int) {
 	return int(res.syllabStackLen() + res.syllabHeapLen())
 }
 
-func (res *findProductAuctionByGroupIDRes) jsonDecoder(buf []byte) (err *er.Error) {
+func (res *findProductAuctionByQuiddityIDGroupIDRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
@@ -246,7 +259,7 @@ func (res *findProductAuctionByGroupIDRes) jsonDecoder(buf []byte) (err *er.Erro
 	return
 }
 
-func (res *findProductAuctionByGroupIDRes) jsonEncoder() (buf []byte) {
+func (res *findProductAuctionByQuiddityIDGroupIDRes) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, res.jsonLen()),
 	}
@@ -258,7 +271,7 @@ func (res *findProductAuctionByGroupIDRes) jsonEncoder() (buf []byte) {
 	return encoder.Buf
 }
 
-func (res *findProductAuctionByGroupIDRes) jsonLen() (ln int) {
+func (res *findProductAuctionByQuiddityIDGroupIDRes) jsonLen() (ln int) {
 	ln = len(res.IDs) * 46
 	ln += 8
 	return

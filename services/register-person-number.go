@@ -20,19 +20,22 @@ import (
 
 var registerPersonNumberService = achaemenid.Service{
 	ID:                756778065,
-	URI:               "", // API services can set like "/apis?756778065" but it is not efficient, find services by ID.
-	CRUD:              authorization.CRUDCreate,
 	IssueDate:         1602687948,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
 	ExpireInFavorOfID: 0,
 	Status:            achaemenid.ServiceStatePreAlpha,
 
+	Authorization: authorization.Service{
+		CRUD:     authorization.CRUDCreate,
+		UserType: authorization.UserTypePerson,
+	},
+
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "RegisterPersonNumber",
+		lang.LanguageEnglish: "RegisterPersonNumber",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
 		"PersonNumber",
@@ -89,7 +92,7 @@ type registerPersonNumberReq struct {
 func registerPersonNumber(st *achaemenid.Stream, req *registerPersonNumberReq, unsafe bool) (err *er.Error) {
 	if !unsafe {
 		if st.Connection.UserID != req.PersonID {
-			err = authorization.ErrAuthorizationUserNotAllow
+			err = authorization.ErrUserNotAllow
 			return
 		}
 
@@ -121,39 +124,32 @@ func registerPersonNumber(st *achaemenid.Stream, req *registerPersonNumberReq, u
 	}
 	err = pn.GetLastByNumber()
 	if err != nil {
-		if err == ganjine.ErrGanjineRecordNotFound {
+		if err.Equal(ganjine.ErrRecordNotFound) {
 			err = nil
 		} else {
-			err = ErrPlatformBadSituation
+			err = ErrBadSituation
 			return
 		}
 	}
 
 	if pn.PersonID != [32]byte{} || pn.Status == datastore.PersonNumberRegister {
-		err = ErrPlatformPersonNumberRegistered
+		err = ErrPersonNumberRegistered
 		return
 	} else if pn.Status == datastore.PersonNumberBlockedByJustice {
-		err = ErrPlatformBlockedByJustice
+		err = ErrBlockedByJustice
 		return
 	}
 
 	// TODO::: un-register last person number
 
 	pn = datastore.PersonNumber{
-		AppInstanceID:    server.Nodes.LocalNode.InstanceID,
+		AppInstanceID:    achaemenid.Server.Nodes.LocalNode.InstanceID,
 		UserConnectionID: st.Connection.ID,
 		PersonID:         req.PersonID,
 		Number:           req.PhoneNumber,
 		Status:           datastore.PersonNumberRegister,
 	}
-	err = pn.Set()
-	if err != nil {
-		// TODO:::
-		return
-	}
-
-	pn.IndexPersonID()
-	pn.IndexNumber()
+	err = pn.SaveNew()
 	return
 }
 
@@ -177,40 +173,45 @@ func (req *registerPersonNumberReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[5] {
-		case 'n':
-			decoder.SetFounded()
-			decoder.Offset(11)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "PersonID":
 			err = decoder.DecodeByteArrayAsBase64(req.PersonID[:])
-			if err != nil {
-				return
-			}
-		case 'N':
-			decoder.SetFounded()
-			decoder.Offset(13)
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-			req.PhoneNumber = uint64(num)
-		case 'O':
-			decoder.SetFounded()
-			decoder.Offset(10)
-			var num uint64
-			num, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
-			req.PhoneOTP = uint64(num)
+		case "PhoneNumber":
+			req.PhoneNumber, err = decoder.DecodeUInt64()
+		case "PhoneOTP":
+			req.PhoneOTP, err = decoder.DecodeUInt64()
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
+	return
+}
+
+func (req *registerPersonNumberReq) jsonEncoder() (buf []byte) {
+	var encoder = json.Encoder{
+		Buf: make([]byte, 0, req.jsonLen()),
+	}
+
+	encoder.EncodeString(`{"PersonID":"`)
+	encoder.EncodeByteSliceAsBase64(req.PersonID[:])
+
+	encoder.EncodeString(`","PhoneNumber":`)
+	encoder.EncodeUInt64(req.PhoneNumber)
+
+	encoder.EncodeString(`,"PhoneOTP":`)
+	encoder.EncodeUInt64(req.PhoneOTP)
+
+	encoder.EncodeByte('}')
+	return encoder.Buf
+}
+
+func (req *registerPersonNumberReq) jsonLen() (ln int) {
+	ln = 125
 	return
 }

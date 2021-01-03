@@ -14,8 +14,8 @@ import (
 	"../libgo/syllab"
 )
 
-var findWikiByOrgIDService = achaemenid.Service{
-	ID:                2965780360,
+var findQuiddityByOrgIDService = achaemenid.Service{
+	ID:                2290794554,
 	IssueDate:         1605027929,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // English name of favor service just to show off!
@@ -28,29 +28,29 @@ var findWikiByOrgIDService = achaemenid.Service{
 	},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Get Wiki IDs By Org ID",
+		lang.LanguageEnglish: "Find Quiddity By Org ID",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "",
+		lang.LanguageEnglish: "",
 	},
 	TAGS: []string{
-		"Wiki",
+		"Quiddity",
 	},
 
-	SRPCHandler: FindWikiByOrgIDSRPC,
-	HTTPHandler: FindWikiByOrgIDHTTP,
+	SRPCHandler: FindQuiddityByOrgIDSRPC,
+	HTTPHandler: FindQuiddityByOrgIDHTTP,
 }
 
-// FindWikiByOrgIDSRPC is sRPC handler of FindWikiByOrgID service.
-func FindWikiByOrgIDSRPC(st *achaemenid.Stream) {
-	var req = &findWikiByOrgIDReq{}
+// FindQuiddityByOrgIDSRPC is sRPC handler of FindQuiddityByOrgID service.
+func FindQuiddityByOrgIDSRPC(st *achaemenid.Stream) {
+	var req = &findQuiddityByOrgIDReq{}
 	st.Err = req.syllabDecoder(srpc.GetPayload(st.IncomePayload))
 	if st.Err != nil {
 		return
 	}
 
-	var res *findWikiByOrgIDRes
-	res, st.Err = findWikiByOrgID(st, req)
+	var res *findQuiddityByOrgIDRes
+	res, st.Err = findQuiddityByOrgID(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		return
@@ -60,17 +60,17 @@ func FindWikiByOrgIDSRPC(st *achaemenid.Stream) {
 	res.syllabEncoder(srpc.GetPayload(st.OutcomePayload))
 }
 
-// FindWikiByOrgIDHTTP is HTTP handler of FindWikiByOrgID service.
-func FindWikiByOrgIDHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
-	var req = &findWikiByOrgIDReq{}
+// FindQuiddityByOrgIDHTTP is HTTP handler of FindQuiddityByOrgID service.
+func FindQuiddityByOrgIDHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *http.Response) {
+	var req = &findQuiddityByOrgIDReq{}
 	st.Err = req.jsonDecoder(httpReq.Body)
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
 		return
 	}
 
-	var res *findWikiByOrgIDRes
-	res, st.Err = findWikiByOrgID(st, req)
+	var res *findQuiddityByOrgIDRes
+	res, st.Err = findQuiddityByOrgID(st, req)
 	// Check if any error occur in bussiness logic
 	if st.Err != nil {
 		httpRes.SetStatus(http.StatusBadRequestCode, http.StatusBadRequestPhrase)
@@ -82,27 +82,27 @@ func FindWikiByOrgIDHTTP(st *achaemenid.Stream, httpReq *http.Request, httpRes *
 	httpRes.Body = res.jsonEncoder()
 }
 
-type findWikiByOrgIDReq struct {
+type findQuiddityByOrgIDReq struct {
 	OrgID  [32]byte `json:",string"`
 	Offset uint64
 	Limit  uint64
 }
 
-type findWikiByOrgIDRes struct {
+type findQuiddityByOrgIDRes struct {
 	IDs [][32]byte `json:",string"`
 }
 
-func findWikiByOrgID(st *achaemenid.Stream, req *findWikiByOrgIDReq) (res *findWikiByOrgIDRes, err *er.Error) {
-	var w = datastore.Wiki{
+func findQuiddityByOrgID(st *achaemenid.Stream, req *findQuiddityByOrgIDReq) (res *findQuiddityByOrgIDRes, err *er.Error) {
+	var w = datastore.Quiddity{
 		OrgID: req.OrgID,
 	}
 	var indexRes [][32]byte
-	indexRes, err = w.FindIDsByOrgIDByHashIndex(req.Offset, req.Limit)
+	indexRes, err = w.FindIDsByOrgID(req.Offset, req.Limit)
 	if err != nil {
 		return
 	}
 
-	res = &findWikiByOrgIDRes{
+	res = &findQuiddityByOrgIDRes{
 		IDs: indexRes,
 	}
 	return
@@ -112,7 +112,7 @@ func findWikiByOrgID(st *achaemenid.Stream, req *findWikiByOrgIDReq) (res *findW
 	Request Encoders & Decoders
 */
 
-func (req *findWikiByOrgIDReq) syllabDecoder(buf []byte) (err *er.Error) {
+func (req *findQuiddityByOrgIDReq) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < req.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -124,67 +124,50 @@ func (req *findWikiByOrgIDReq) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (req *findWikiByOrgIDReq) syllabEncoder(buf []byte) {
+func (req *findQuiddityByOrgIDReq) syllabEncoder(buf []byte) {
 	copy(buf[0:], req.OrgID[:])
 	syllab.SetUInt64(buf, 32, req.Offset)
 	syllab.SetUInt64(buf, 40, req.Limit)
 	return
 }
 
-func (req *findWikiByOrgIDReq) syllabStackLen() (ln uint32) {
+func (req *findQuiddityByOrgIDReq) syllabStackLen() (ln uint32) {
 	return 48
 }
 
-func (req *findWikiByOrgIDReq) syllabHeapLen() (ln uint32) {
+func (req *findQuiddityByOrgIDReq) syllabHeapLen() (ln uint32) {
 	return
 }
 
-func (req *findWikiByOrgIDReq) syllabLen() (ln int) {
+func (req *findQuiddityByOrgIDReq) syllabLen() (ln int) {
 	return int(req.syllabStackLen() + req.syllabHeapLen())
 }
 
-func (req *findWikiByOrgIDReq) jsonDecoder(buf []byte) (err *er.Error) {
+func (req *findQuiddityByOrgIDReq) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'O':
-			switch decoder.Buf[1] {
-			case 'r':
-				decoder.SetFounded()
-				decoder.Offset(8)
-				err = decoder.DecodeByteArrayAsBase64(req.OrgID[:])
-				if err != nil {
-					return
-				}
-			case 'f':
-				decoder.SetFounded()
-				decoder.Offset(8)
-				req.Offset, err = decoder.DecodeUInt64()
-				if err != nil {
-					return
-				}
-			}
-		case 'L':
-			decoder.SetFounded()
-			decoder.Offset(7)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "OrgID":
+			err = decoder.DecodeByteArrayAsBase64(req.OrgID[:])
+		case "Offset":
+			req.Offset, err = decoder.DecodeUInt64()
+		case "Limit":
 			req.Limit, err = decoder.DecodeUInt64()
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
 	return
 }
 
-func (req *findWikiByOrgIDReq) jsonEncoder() (buf []byte) {
+func (req *findQuiddityByOrgIDReq) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, req.jsonLen()),
 	}
@@ -202,7 +185,7 @@ func (req *findWikiByOrgIDReq) jsonEncoder() (buf []byte) {
 	return encoder.Buf
 }
 
-func (req *findWikiByOrgIDReq) jsonLen() (ln int) {
+func (req *findQuiddityByOrgIDReq) jsonLen() (ln int) {
 	ln = 114
 	return
 }
@@ -211,7 +194,7 @@ func (req *findWikiByOrgIDReq) jsonLen() (ln int) {
 	Response Encoders & Decoders
 */
 
-func (res *findWikiByOrgIDRes) syllabDecoder(buf []byte) (err *er.Error) {
+func (res *findQuiddityByOrgIDRes) syllabDecoder(buf []byte) (err *er.Error) {
 	if uint32(len(buf)) < res.syllabStackLen() {
 		err = syllab.ErrSyllabDecodeSmallSlice
 		return
@@ -221,51 +204,47 @@ func (res *findWikiByOrgIDRes) syllabDecoder(buf []byte) (err *er.Error) {
 	return
 }
 
-func (res *findWikiByOrgIDRes) syllabEncoder(buf []byte) {
+func (res *findQuiddityByOrgIDRes) syllabEncoder(buf []byte) {
 	var hsi uint32 = res.syllabStackLen() // Heap start index || Stack size!
 
 	syllab.Set32ByteArrayArray(buf, res.IDs, 0, hsi)
 	return
 }
 
-func (res *findWikiByOrgIDRes) syllabStackLen() (ln uint32) {
+func (res *findQuiddityByOrgIDRes) syllabStackLen() (ln uint32) {
 	return 8
 }
 
-func (res *findWikiByOrgIDRes) syllabHeapLen() (ln uint32) {
+func (res *findQuiddityByOrgIDRes) syllabHeapLen() (ln uint32) {
 	ln = uint32(len(res.IDs) * 32)
 	return
 }
 
-func (res *findWikiByOrgIDRes) syllabLen() (ln int) {
+func (res *findQuiddityByOrgIDRes) syllabLen() (ln int) {
 	return int(res.syllabStackLen() + res.syllabHeapLen())
 }
 
-func (res *findWikiByOrgIDRes) jsonDecoder(buf []byte) (err *er.Error) {
+func (res *findQuiddityByOrgIDRes) jsonDecoder(buf []byte) (err *er.Error) {
 	var decoder = json.DecoderUnsafeMinifed{
 		Buf: buf,
 	}
-	for len(decoder.Buf) > 2 {
-		decoder.Offset(2)
-		switch decoder.Buf[0] {
-		case 'I':
-			decoder.SetFounded()
-			decoder.Offset(6)
+	for err == nil {
+		var keyName = decoder.DecodeKey()
+		switch keyName {
+		case "IDs":
 			res.IDs, err = decoder.Decode32ByteArraySliceAsBase64()
-			if err != nil {
-				return
-			}
+		default:
+			err = decoder.NotFoundKeyStrict()
 		}
 
-		err = decoder.IterationCheck()
-		if err != nil {
+		if len(decoder.Buf) < 3 {
 			return
 		}
 	}
 	return
 }
 
-func (res *findWikiByOrgIDRes) jsonEncoder() (buf []byte) {
+func (res *findQuiddityByOrgIDRes) jsonEncoder() (buf []byte) {
 	var encoder = json.Encoder{
 		Buf: make([]byte, 0, res.jsonLen()),
 	}
@@ -277,7 +256,7 @@ func (res *findWikiByOrgIDRes) jsonEncoder() (buf []byte) {
 	return encoder.Buf
 }
 
-func (res *findWikiByOrgIDRes) jsonLen() (ln int) {
+func (res *findQuiddityByOrgIDRes) jsonLen() (ln int) {
 	ln = len(res.IDs) * 46
 	ln += 8
 	return
