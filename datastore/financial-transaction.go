@@ -5,6 +5,7 @@ package datastore
 import (
 	"crypto/sha512"
 
+	"../libgo/achaemenid"
 	etime "../libgo/earth-time"
 	er "../libgo/error"
 	"../libgo/ganjine"
@@ -12,16 +13,18 @@ import (
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
 	"../libgo/log"
+	"../libgo/pehrest"
+	psdk "../libgo/pehrest-sdk"
 	"../libgo/price"
 	"../libgo/syllab"
 )
 
 const (
-	financialTransactionStructureID uint64 = 15981238345012607782
+	financialTransactionStructureID uint64 = 11180411632961596298
 )
 
 var financialTransactionStructure = ganjine.DataStructure{
-	ID:                15981238345012607782,
+	ID:                11180411632961596298,
 	IssueDate:         1599291620,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // Other structure name
@@ -30,10 +33,10 @@ var financialTransactionStructure = ganjine.DataStructure{
 	Structure:         FinancialTransaction{},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Financial Transaction",
+		lang.LanguageEnglish: "Financial Transaction",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: `store each financial transaction.`,
+		lang.LanguageEnglish: `store each financial transaction.`,
 	},
 	TAGS: []string{
 		"",
@@ -50,15 +53,40 @@ type FinancialTransaction struct {
 	OwnerAppID        [32]byte
 
 	/* Unique data */
-	AppInstanceID         [32]byte       // Store to remember which app instance set||chanaged this record!
-	UserConnectionID      [32]byte       // Store to remember which user connection set||chanaged this record!
-	UserID                [32]byte       `ganjine:"Unique" hash-index:"RecordID[daily,pair,Currency]"`
-	Currency              price.Currency `ganjine:"Unique" hash-index:"UserID"`
-	ReferenceID           [32]byte       // ProductID || UserID Transferred || ForeignExchangeID || JusticeID || ...
-	ReferenceType         uint8          // 0:Product 1:Transfer 2:Transfer-bank 3:Block 4:donate
-	PreviousTransactionID [32]byte       // Last RecordID of same user with same currency
-	Amount                price.Amount
-	Balance               price.Amount
+	AppInstanceID         [32]byte // Store to remember which app instance set||chanaged this record!
+	UserConnectionID      [32]byte // Store to remember which user connection set||chanaged this record!
+	UserID                [32]byte `index-hash:"RecordID[daily]"`
+	ReferenceID           [32]byte // data base on ReferenceType
+	ReferenceType         FinancialTransactionType
+	PreviousTransactionID [32]byte     // Last RecordID this transaction base on it!
+	Amount                price.Amount // Some number base on currency is Decimal part e.g. 8099 >> 80.99$
+	Balance               price.Amount // Some number base on currency is Decimal part e.g. 8099 >> 80.99$
+}
+
+// Lock read last RecordID and lock userID to set in-time transactions!
+func (ft *FinancialTransaction) Lock() (err *er.Error) {
+	err = ft.GetLastTransactionByUserID()
+	return
+}
+
+// UnLock will unlock userID to let other services set new in-time transaction records!
+func (ft *FinancialTransaction) UnLock() (err *er.Error) {
+	err = ft.SaveNew()
+	if err != nil {
+		return
+	}
+	return
+}
+
+// SaveNew method set some data and write entire FinancialTransaction record with all indexes!
+func (ft *FinancialTransaction) SaveNew() (err *er.Error) {
+	err = ft.Set()
+	if err != nil {
+		return
+	}
+
+	ft.IndexUserIDForRecordIDDaily()
+	return
 }
 
 // Set method set some data and write entire FinancialTransaction record!
@@ -66,7 +94,7 @@ func (ft *FinancialTransaction) Set() (err *er.Error) {
 	ft.RecordStructureID = financialTransactionStructureID
 	ft.RecordSize = ft.syllabLen()
 	ft.WriteTime = etime.Now()
-	ft.OwnerAppID = server.AppID
+	ft.OwnerAppID = achaemenid.Server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -75,7 +103,7 @@ func (ft *FinancialTransaction) Set() (err *er.Error) {
 	ft.RecordID = sha512.Sum512_256(req.Record[32:])
 	copy(req.Record[0:], ft.RecordID[:])
 
-	err = gsdk.SetRecord(cluster, &req)
+	err = gsdk.SetRecord(&req)
 	if err != nil {
 		// TODO::: Handle error situation
 	}
@@ -90,7 +118,7 @@ func (ft *FinancialTransaction) GetByRecordID() (err *er.Error) {
 		RecordStructureID: financialTransactionStructureID,
 	}
 	var res *gs.GetRecordRes
-	res, err = gsdk.GetRecord(cluster, &req)
+	res, err = gsdk.GetRecord(&req)
 	if err != nil {
 		return
 	}
@@ -106,22 +134,26 @@ func (ft *FinancialTransaction) GetByRecordID() (err *er.Error) {
 	return
 }
 
-// GetLastTransactionByUserCurrency method find and read last version of record by given UserID + Currency.
+/*
+	-- Get Last Methods --
+*/
+
+// GetLastTransactionByUserID method find and read last version of record by given UserID.
 // It returns error if can't find any record in last 90 days! longer than this period must do carefully in service logic!
-func (ft *FinancialTransaction) GetLastTransactionByUserCurrency() (err *er.Error) {
-	var indexRequest = gs.HashIndexGetValuesReq{
-		IndexKey: ft.hashUserIDCurrencyforRecordIDDaily(),
+func (ft *FinancialTransaction) GetLastTransactionByUserID() (err *er.Error) {
+	var indexRequest = pehrest.HashGetValuesReq{
+		IndexKey: ft.hashUserIDForRecordIDDaily(),
 		Offset:   18446744073709551615,
 		Limit:    1,
 	}
-	var indexRes *gs.HashIndexGetValuesRes
+	var indexRes *pehrest.HashGetValuesRes
 	for i := 0; i < 91; i++ {
-		indexRes, err = gsdk.HashIndexGetValues(cluster, &indexRequest)
+		indexRes, err = psdk.HashGetValues(&indexRequest)
 		if err == nil {
 			break
 		}
 		ft.WriteTime -= (24 * 60 * 60)
-		indexRequest.IndexKey = ft.hashUserIDCurrencyforRecordIDDaily()
+		indexRequest.IndexKey = ft.hashUserIDForRecordIDDaily()
 	}
 	if err != nil {
 		return
@@ -136,28 +168,46 @@ func (ft *FinancialTransaction) GetLastTransactionByUserCurrency() (err *er.Erro
 }
 
 /*
+	-- Search Methods --
+*/
+
+// FindRecordIDsByUserIDWriteTime find RecordsIDs by given UserID + WriteTime(round to daily)
+func (ft *FinancialTransaction) FindRecordIDsByUserIDWriteTime(offset, limit uint64) (IDs [][32]byte, err *er.Error) {
+	var indexReq = &pehrest.HashGetValuesReq{
+		IndexKey: ft.hashUserIDForRecordIDDaily(),
+		Offset:   offset,
+		Limit:    limit,
+	}
+	var indexRes *pehrest.HashGetValuesRes
+	indexRes, err = psdk.HashGetValues(indexReq)
+	IDs = indexRes.IndexValues
+	return
+}
+
+/*
 	-- PRIMARY INDEXES --
 */
 
-// IndexUserCurrencyTransactionDaily index ft.UserID + ft.Currency on daily base to retrieve record fast later.
-func (ft *FinancialTransaction) IndexUserCurrencyTransactionDaily() {
-	var indexRequest = gs.HashIndexSetValueReq{
+// IndexUserIDForRecordIDDaily index ft.UserID on daily base to retrieve record fast later.
+func (ft *FinancialTransaction) IndexUserIDForRecordIDDaily() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   ft.hashUserIDCurrencyforRecordIDDaily(),
+		IndexKey:   ft.hashUserIDForRecordIDDaily(),
 		IndexValue: ft.RecordID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (ft *FinancialTransaction) hashUserIDCurrencyforRecordIDDaily() (hash [32]byte) {
-	var buf = make([]byte, 50) // 8+32+2+8
+func (ft *FinancialTransaction) hashUserIDForRecordIDDaily() (hash [32]byte) {
+	const field = "UserID"
+	var buf = make([]byte, 48+len(field)) // 8+32+8
 	syllab.SetUInt64(buf, 0, financialTransactionStructureID)
 	copy(buf[8:], ft.UserID[:])
-	syllab.SetUInt16(buf, 40, uint16(ft.Currency))
-	syllab.SetInt64(buf, 42, ft.WriteTime.RoundToDay())
+	syllab.SetInt64(buf, 40, ft.WriteTime.RoundToDay())
+	copy(buf[48:], field)
 	return sha512.Sum512_256(buf)
 }
 
@@ -171,28 +221,7 @@ func (ft *FinancialTransaction) hashUserIDCurrencyforRecordIDDaily() (hash [32]b
 	-- LIST FIELDS --
 */
 
-// ListCurrencyforUserID list all Currency own by specific UserID.
-// Just call in first create currency record not in each transaction!
-func (ft *FinancialTransaction) ListCurrencyforUserID() {
-	var indexRequest = gs.HashIndexSetValueReq{
-		Type:     gs.RequestTypeBroadcast,
-		IndexKey: ft.hashUserIDforCurrency(),
-	}
-	syllab.SetUInt16(indexRequest.IndexValue[:], 0, uint16(ft.Currency))
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
-	if err != nil {
-		// TODO::: we must retry more due to record wrote successfully!
-	}
-}
-
-func (ft *FinancialTransaction) hashUserIDforCurrency() (hash [32]byte) {
-	const field = "ListCurrency"
-	var buf = make([]byte, 40+len(field)) // 8+32
-	syllab.SetUInt64(buf, 0, financialTransactionStructureID)
-	copy(buf[8:], ft.UserID[:])
-	copy(buf[40:], field)
-	return sha512.Sum512_256(buf)
-}
+// ??
 
 /*
 	-- Syllab Encoder & Decoder --
@@ -213,12 +242,11 @@ func (ft *FinancialTransaction) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(ft.AppInstanceID[:], buf[88:])
 	copy(ft.UserConnectionID[:], buf[120:])
 	copy(ft.UserID[:], buf[152:])
-	ft.Currency = price.Currency(syllab.GetUInt16(buf, 184))
-	copy(ft.ReferenceID[:], buf[186:])
-	ft.ReferenceType = syllab.GetUInt8(buf, 218)
-	copy(ft.PreviousTransactionID[:], buf[219:])
-	ft.Amount = price.Amount(syllab.GetInt64(buf, 251))
-	ft.Balance = price.Amount(syllab.GetUInt64(buf, 259))
+	copy(ft.ReferenceID[:], buf[184:])
+	ft.ReferenceType = FinancialTransactionType(syllab.GetUInt8(buf, 216))
+	copy(ft.PreviousTransactionID[:], buf[217:])
+	ft.Amount = price.Amount(syllab.GetInt64(buf, 249))
+	ft.Balance = price.Amount(syllab.GetUInt64(buf, 257))
 	return
 }
 
@@ -234,17 +262,16 @@ func (ft *FinancialTransaction) syllabEncoder() (buf []byte) {
 	copy(buf[88:], ft.AppInstanceID[:])
 	copy(buf[120:], ft.UserConnectionID[:])
 	copy(buf[152:], ft.UserID[:])
-	syllab.SetUInt16(buf, 184, uint16(ft.Currency))
-	copy(buf[186:], ft.ReferenceID[:])
-	syllab.SetUInt8(buf, 218, ft.ReferenceType)
-	copy(buf[219:], ft.PreviousTransactionID[:])
-	syllab.SetInt64(buf, 251, int64(ft.Amount))
-	syllab.SetInt64(buf, 259, int64(ft.Balance))
+	copy(buf[184:], ft.ReferenceID[:])
+	syllab.SetUInt8(buf, 216, uint8(ft.ReferenceType))
+	copy(buf[217:], ft.PreviousTransactionID[:])
+	syllab.SetInt64(buf, 249, int64(ft.Amount))
+	syllab.SetInt64(buf, 257, int64(ft.Balance))
 	return
 }
 
 func (ft *FinancialTransaction) syllabStackLen() (ln uint32) {
-	return 267
+	return 265
 }
 
 func (ft *FinancialTransaction) syllabHeapLen() (ln uint32) {
@@ -254,3 +281,23 @@ func (ft *FinancialTransaction) syllabHeapLen() (ln uint32) {
 func (ft *FinancialTransaction) syllabLen() (ln uint64) {
 	return uint64(ft.syllabStackLen() + ft.syllabHeapLen())
 }
+
+/*
+	-- Record types --
+*/
+
+// FinancialTransactionType indicate FinancialTransaction record type
+type FinancialTransactionType uint8
+
+// FinancialTransaction types
+const (
+	FinancialTransactionUnset FinancialTransactionType = iota
+	FinancialTransactionFailed
+	FinancialTransactionBlocked //  JusticeID
+	FinancialTransactionDonate  // UserID Transferred
+	FinancialTransactionBankTransfer
+	FinancialTransactionPOSTransfer // ForeignExchangeID
+	FinancialTransactionWebTransfer // ForeignExchangeID
+	FinancialTransactionProductAuctionCommission
+	FinancialTransactionProductAuctionPrice // ProductID
+)

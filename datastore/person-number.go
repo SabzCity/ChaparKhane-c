@@ -5,6 +5,7 @@ package datastore
 import (
 	"crypto/sha512"
 
+	"../libgo/achaemenid"
 	etime "../libgo/earth-time"
 	er "../libgo/error"
 	"../libgo/ganjine"
@@ -12,15 +13,17 @@ import (
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
 	"../libgo/log"
+	"../libgo/pehrest"
+	psdk "../libgo/pehrest-sdk"
 	"../libgo/syllab"
 )
 
 const (
-	personNumberStructureID uint64 = 1212190932488392076
+	personNumberStructureID uint64 = 18356608896785246637
 )
 
 var personNumberStructure = ganjine.DataStructure{
-	ID:                1212190932488392076,
+	ID:                18356608896785246637,
 	IssueDate:         1599048951,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // Other structure name
@@ -29,10 +32,10 @@ var personNumberStructure = ganjine.DataStructure{
 	Structure:         PersonNumber{},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "PersonNumber",
+		lang.LanguageEnglish: "Person Number",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "store user number that act for some process like exiting phone, mobile, ...",
+		lang.LanguageEnglish: "store user number that act for some process like exiting phone, mobile, ...",
 	},
 	TAGS: []string{
 		"",
@@ -51,28 +54,28 @@ type PersonNumber struct {
 	/* Unique data */
 	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
 	UserConnectionID [32]byte // Store to remember which user connection set||chanaged this record!
-	PersonID         [32]byte `ganjine:"Immutable,Unique" ganjine-index:"Number"`
-	Number           uint64   `ganjine:"Unique"` // must start with country code e.g. (00)98-912-345-6789
+	PersonID         [32]byte `index-hash:"RecordID"`
+	Number           uint64   `index-hash:"Number"` // must start with country code e.g. (00)98-912-345-6789
 	Status           PersonNumberStatus
 }
 
-// PersonNumberStatus indicate PersonNumber record status
-type PersonNumberStatus uint8
-
-// PersonNumber status
-const (
-	PersonNumberUnset PersonNumberStatus = iota
-	PersonNumberRegister
-	PersonNumberRemove
-	PersonNumberBlockedByJustice
-)
+// SaveNew method set some data and write entire Quiddity record with all indexes!
+func (pn *PersonNumber) SaveNew() (err *er.Error) {
+	err = pn.Set()
+	if err != nil {
+		return
+	}
+	pn.IndexRecordIDForPersonID()
+	pn.IndexPersonIDForNumber()
+	return
+}
 
 // Set method set some data and write entire PersonNumber record!
 func (pn *PersonNumber) Set() (err *er.Error) {
 	pn.RecordStructureID = personNumberStructureID
 	pn.RecordSize = pn.syllabLen()
 	pn.WriteTime = etime.Now()
-	pn.OwnerAppID = server.AppID
+	pn.OwnerAppID = achaemenid.Server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -81,7 +84,7 @@ func (pn *PersonNumber) Set() (err *er.Error) {
 	pn.RecordID = sha512.Sum512_256(req.Record[32:])
 	copy(req.Record[0:], pn.RecordID[:])
 
-	err = gsdk.SetRecord(cluster, &req)
+	err = gsdk.SetRecord(&req)
 	if err != nil {
 		if log.DebugMode {
 			log.Debug("Ganjine - Set Record:", err)
@@ -98,7 +101,7 @@ func (pn *PersonNumber) GetByRecordID() (err *er.Error) {
 		RecordStructureID: personNumberStructureID,
 	}
 	var res *gs.GetRecordRes
-	res, err = gsdk.GetRecord(cluster, &req)
+	res, err = gsdk.GetRecord(&req)
 	if err != nil {
 		return
 	}
@@ -116,13 +119,13 @@ func (pn *PersonNumber) GetByRecordID() (err *er.Error) {
 
 // GetLastByPersonID method find and read last version of record by given PersonID
 func (pn *PersonNumber) GetLastByPersonID() (err *er.Error) {
-	var indexReq = &gs.HashIndexGetValuesReq{
-		IndexKey: pn.hashPersonIDforRecordID(),
+	var indexReq = &pehrest.HashGetValuesReq{
+		IndexKey: pn.hashPersonIDForRecordID(),
 		Offset:   18446744073709551615,
 		Limit:    1,
 	}
-	var indexRes *gs.HashIndexGetValuesRes
-	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
+	var indexRes *pehrest.HashGetValuesRes
+	indexRes, err = psdk.HashGetValues(indexReq)
 	if err != nil {
 		return
 	}
@@ -137,13 +140,13 @@ func (pn *PersonNumber) GetLastByPersonID() (err *er.Error) {
 
 // GetLastByNumber method find and read last version of record by given Number
 func (pn *PersonNumber) GetLastByNumber() (err *er.Error) {
-	var indexReq = &gs.HashIndexGetValuesReq{
-		IndexKey: pn.hashNumberforPersonID(),
+	var indexReq = &pehrest.HashGetValuesReq{
+		IndexKey: pn.hashNumberForPersonID(),
 		Offset:   18446744073709551615,
 		Limit:    1,
 	}
-	var indexRes *gs.HashIndexGetValuesRes
-	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
+	var indexRes *pehrest.HashGetValuesRes
+	indexRes, err = psdk.HashGetValues(indexReq)
 	if err != nil {
 		return
 	}
@@ -160,14 +163,14 @@ func (pn *PersonNumber) GetLastByNumber() (err *er.Error) {
 	-- PRIMARY INDEXES --
 */
 
-// IndexPersonID index pn.PersonID to retrieve record fast later.
-func (pn *PersonNumber) IndexPersonID() {
-	var indexRequest = gs.HashIndexSetValueReq{
+// IndexRecordIDForPersonID save RecordID chain for PersonID
+func (pn *PersonNumber) IndexRecordIDForPersonID() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   pn.hashPersonIDforRecordID(),
+		IndexKey:   pn.hashPersonIDForRecordID(),
 		IndexValue: pn.RecordID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		if log.DebugMode {
 			log.Debug("Ganjine - Set Index:", err)
@@ -176,7 +179,7 @@ func (pn *PersonNumber) IndexPersonID() {
 	}
 }
 
-func (pn *PersonNumber) hashPersonIDforRecordID() (hash [32]byte) {
+func (pn *PersonNumber) hashPersonIDForRecordID() (hash [32]byte) {
 	var buf = make([]byte, 40) // 8+32
 	syllab.SetUInt64(buf, 0, personNumberStructureID)
 	copy(buf[8:], pn.PersonID[:])
@@ -187,14 +190,14 @@ func (pn *PersonNumber) hashPersonIDforRecordID() (hash [32]byte) {
 	-- SECONDARY INDEXES --
 */
 
-// IndexNumber index pn.Number to retrieve record fast later.
-func (pn *PersonNumber) IndexNumber() {
-	var indexRequest = gs.HashIndexSetValueReq{
+// IndexPersonIDForNumber save PersonID chain for Number
+func (pn *PersonNumber) IndexPersonIDForNumber() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   pn.hashNumberforPersonID(),
+		IndexKey:   pn.hashNumberForPersonID(),
 		IndexValue: pn.PersonID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		if log.DebugMode {
 			log.Debug("Ganjine - Set Index:", err)
@@ -203,7 +206,7 @@ func (pn *PersonNumber) IndexNumber() {
 	}
 }
 
-func (pn *PersonNumber) hashNumberforPersonID() (hash [32]byte) {
+func (pn *PersonNumber) hashNumberForPersonID() (hash [32]byte) {
 	var buf = make([]byte, 16) // 8+8
 	syllab.SetUInt64(buf, 0, personNumberStructureID)
 	syllab.SetUInt64(buf, 8, pn.Number)
@@ -262,3 +265,18 @@ func (pn *PersonNumber) syllabHeapLen() (ln uint32) {
 func (pn *PersonNumber) syllabLen() (ln uint64) {
 	return uint64(pn.syllabStackLen() + pn.syllabHeapLen())
 }
+
+/*
+	-- Record types --
+*/
+
+// PersonNumberStatus indicate PersonNumber record status
+type PersonNumberStatus uint8
+
+// PersonNumber status
+const (
+	PersonNumberUnset PersonNumberStatus = iota
+	PersonNumberRegister
+	PersonNumberRemove
+	PersonNumberBlockedByJustice
+)

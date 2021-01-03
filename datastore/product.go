@@ -5,6 +5,7 @@ package datastore
 import (
 	"crypto/sha512"
 
+	"../libgo/achaemenid"
 	etime "../libgo/earth-time"
 	er "../libgo/error"
 	"../libgo/ganjine"
@@ -12,6 +13,8 @@ import (
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
 	"../libgo/log"
+	"../libgo/pehrest"
+	psdk "../libgo/pehrest-sdk"
 	"../libgo/syllab"
 )
 
@@ -29,10 +32,10 @@ var productStructure = ganjine.DataStructure{
 	Structure:         Product{},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "Product",
+		lang.LanguageEnglish: "Product",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "store product(goods) details!",
+		lang.LanguageEnglish: "store product(goods) details!",
 	},
 	TAGS: []string{
 		"",
@@ -49,16 +52,40 @@ type Product struct {
 	OwnerAppID        [32]byte
 
 	/* Unique data */
-	AppInstanceID        [32]byte // Store to remember which app instance set||chanaged this record!
-	UserConnectionID     [32]byte // Store to remember which user connection set||chanaged this record!
-	ID                   [32]byte `ganjine:"Immutable,Unique" ganjine-index:"OwnerID,SellerID,WikiID,WikiID-DistributionCenterID[temp]"` // ProductID
-	OwnerID              [32]byte // Who belong to! Just org can be first owner!
-	SellerID             [32]byte // OrdererID, who places the order usually use for prescription(drug order) or sales agent!
-	WikiID               [32]byte `ganjine:"Immutable"`
-	ProductionID         [32]byte // It can also upper ID that this product split from it!
-	DistributionCenterID [32]byte `ganjine-list:"WikiID[temp]"` // It will changed only on owner changed otherwise can be mobile location! if != Sale.WarehouseID means user wants to send item to this address!
-	ProductAuctionID     [32]byte // can be 0 for just change owner without any auction or price but very rare situation!
-	Status               ProductStatus
+	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
+	UserConnectionID [32]byte // Store to remember which user connection set||chanaged this record!
+	ID               [32]byte `index-hash:"RecordID"`  // ProductID
+	OwnerID          [32]byte `index-hash:"ID[daily]"` // Who belong to! Just org can be first owner!
+	QuiddityID       [32]byte `index-hash:"ID[daily],ID[pair,DCID,daily],ID[pair,DCID,temp],DCID[temp]"`
+
+	SellerID         [32]byte `index-hash:"ID[daily]"` // OrdererID, who places the order usually use for prescription(drug order) or sales agent!
+	ProductionID     [32]byte // It can also upper ID that this product split from it!
+	DCID             [32]byte `index-hash:"QuiddityID"` // DistributionCenterID
+	ProductAuctionID [32]byte `index-hash:"ID"`         // can be 0 for just change owner without any auction or price but very rare situation!
+	Status           ProductStatus
+}
+
+// SaveNew method set some data and write entire Product record with all indexes!
+func (p *Product) SaveNew() (err *er.Error) {
+	err = p.Set()
+	if err != nil {
+		return
+	}
+
+	p.IndexRecordIDForID()
+	p.IndexIDForOwnerIDDaily()
+	p.IndexIDForQuiddityIDDaily()
+	p.IndexIDForQuiddityIDDCIDDaily()
+	if p.SellerID != [32]byte{} {
+		p.IndexIDForSellerIDDaily()
+	}
+	if p.ProductAuctionID != [32]byte{} {
+		p.IndexIDForProductAuctionID()
+	}
+	p.ListQuiddityIDForDCIDDaily()
+	p.TempIndexIDForQuiddityIDDCID()
+	p.TempIndexDCIDForQuiddityID()
+	return
 }
 
 // Set method set some data and write entire Product record!
@@ -66,7 +93,7 @@ func (p *Product) Set() (err *er.Error) {
 	p.RecordStructureID = productStructureID
 	p.RecordSize = p.syllabLen()
 	p.WriteTime = etime.Now()
-	p.OwnerAppID = server.AppID
+	p.OwnerAppID = achaemenid.Server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -75,7 +102,7 @@ func (p *Product) Set() (err *er.Error) {
 	p.RecordID = sha512.Sum512_256(req.Record[32:])
 	copy(req.Record[0:], p.RecordID[:])
 
-	err = gsdk.SetRecord(cluster, &req)
+	err = gsdk.SetRecord(&req)
 	if err != nil {
 		// TODO::: Handle error situation
 	}
@@ -89,7 +116,7 @@ func (p *Product) GetByRecordID() (err *er.Error) {
 		RecordID: p.RecordID,
 	}
 	var res *gs.GetRecordRes
-	res, err = gsdk.GetRecord(cluster, &req)
+	res, err = gsdk.GetRecord(&req)
 	if err != nil {
 		return
 	}
@@ -107,13 +134,13 @@ func (p *Product) GetByRecordID() (err *er.Error) {
 
 // GetLastByID find and read last version of record by given ID
 func (p *Product) GetLastByID() (err *er.Error) {
-	var indexReq = &gs.HashIndexGetValuesReq{
-		IndexKey: p.hashIDforRecordID(),
+	var indexReq = &pehrest.HashGetValuesReq{
+		IndexKey: p.hashIDForRecordID(),
 		Offset:   18446744073709551615,
 		Limit:    1,
 	}
-	var indexRes *gs.HashIndexGetValuesRes
-	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
+	var indexRes *pehrest.HashGetValuesRes
+	indexRes, err = psdk.HashGetValues(indexReq)
 	if err != nil {
 		return
 	}
@@ -130,23 +157,26 @@ func (p *Product) GetLastByID() (err *er.Error) {
 	-- PRIMARY INDEXES --
 */
 
-// IndexID index p.ID to retrieve record fast later.
-func (p *Product) IndexID() {
-	var indexRequest = gs.HashIndexSetValueReq{
+// IndexRecordIDForID save RecordID chain for ID
+// Call in each update to the exiting record!
+func (p *Product) IndexRecordIDForID() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   p.hashIDforRecordID(),
+		IndexKey:   p.hashIDForRecordID(),
 		IndexValue: p.RecordID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (p *Product) hashIDforRecordID() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+32
+func (p *Product) hashIDForRecordID() (hash [32]byte) {
+	const field = "ID"
+	var buf = make([]byte, 40+len(field)) // 8+32
 	syllab.SetUInt64(buf, 0, productStructureID)
 	copy(buf[8:], p.ID[:])
+	copy(buf[40:], field)
 	return sha512.Sum512_256(buf)
 }
 
@@ -154,111 +184,120 @@ func (p *Product) hashIDforRecordID() (hash [32]byte) {
 	-- SECONDARY INDEXES --
 */
 
-// IndexOwnerDaily index to retrieve all ID owned by given p.Owner later in daily.
-func (p *Product) IndexOwnerDaily() {
-	var indexRequest = gs.HashIndexSetValueReq{
+// IndexIDForOwnerIDDaily save ID chain for OwnerID daily
+func (p *Product) IndexIDForOwnerIDDaily() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   p.hashOwnerIDforIDDaily(),
+		IndexKey:   p.hashOwnerIDForIDDaily(),
 		IndexValue: p.ID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (p *Product) hashOwnerIDforIDDaily() (hash [32]byte) {
-	var buf = make([]byte, 48) // 8+32+8
+func (p *Product) hashOwnerIDForIDDaily() (hash [32]byte) {
+	const field = "OwnerID"
+	var buf = make([]byte, 48+len(field)) // 8+32+8
 	syllab.SetUInt64(buf, 0, productStructureID)
 	copy(buf[8:], p.OwnerID[:])
 	syllab.SetInt64(buf, 40, p.WriteTime.RoundToDay())
+	copy(buf[48:], field)
 	return sha512.Sum512_256(buf)
 }
 
-// IndexSellerDaily index to retrieve all ID owned by given p.Seller later in daily.
-func (p *Product) IndexSellerDaily() {
-	var indexRequest = gs.HashIndexSetValueReq{
+// IndexIDForQuiddityIDDaily save ID chain for QuiddityID daily
+func (p *Product) IndexIDForQuiddityIDDaily() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   p.hashSellerIDforIDDaily(),
+		IndexKey:   p.hashQuiddityIDForIDDaily(),
 		IndexValue: p.ID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (p *Product) hashSellerIDforIDDaily() (hash [32]byte) {
-	var buf = make([]byte, 48) // 8+32+8
+func (p *Product) hashQuiddityIDForIDDaily() (hash [32]byte) {
+	const field = "QuiddityID"
+	var buf = make([]byte, 48+len(field)) // 8+32+8
+	syllab.SetUInt64(buf, 0, productStructureID)
+	copy(buf[8:], p.QuiddityID[:])
+	syllab.SetInt64(buf, 40, p.WriteTime.RoundToDay())
+	copy(buf[48:], field)
+	return sha512.Sum512_256(buf)
+}
+
+// IndexIDForQuiddityIDDCIDDaily save ID chain for QuiddityID+DCID
+func (p *Product) IndexIDForQuiddityIDDCIDDaily() {
+	var indexRequest = pehrest.HashSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   p.hashQuiddityIDDCIDForIDDaily(),
+		IndexValue: p.ID,
+	}
+	var err = psdk.HashSetValue(&indexRequest)
+	if err != nil {
+		// TODO::: we must retry more due to record wrote successfully!
+	}
+}
+
+func (p *Product) hashQuiddityIDDCIDForIDDaily() (hash [32]byte) {
+	const field = "QuiddityIDDCID"
+	var buf = make([]byte, 80+len(field)) // 8+32+32+8
+	syllab.SetUInt64(buf, 0, productStructureID)
+	copy(buf[8:], p.QuiddityID[:])
+	copy(buf[40:], p.DCID[:])
+	syllab.SetInt64(buf, 72, p.WriteTime.RoundToDay())
+	copy(buf[80:], field)
+	return sha512.Sum512_256(buf)
+}
+
+// IndexIDForSellerIDDaily save ID chain for SellerID daily
+func (p *Product) IndexIDForSellerIDDaily() {
+	var indexRequest = pehrest.HashSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   p.hashSellerIDForIDDaily(),
+		IndexValue: p.ID,
+	}
+	var err = psdk.HashSetValue(&indexRequest)
+	if err != nil {
+		// TODO::: we must retry more due to record wrote successfully!
+	}
+}
+
+func (p *Product) hashSellerIDForIDDaily() (hash [32]byte) {
+	const field = "SellerID"
+	var buf = make([]byte, 48+len(field)) // 8+32+8
 	syllab.SetUInt64(buf, 0, productStructureID)
 	copy(buf[8:], p.SellerID[:])
 	syllab.SetInt64(buf, 40, p.WriteTime.RoundToDay())
+	copy(buf[48:], field)
 	return sha512.Sum512_256(buf)
 }
 
-// IndexWikiDaily index to retrieve all ID owned by given p.Wiki later in daily.
-func (p *Product) IndexWikiDaily() {
-	var indexRequest = gs.HashIndexSetValueReq{
-		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   p.hashWikiIDforIDDaily(),
-		IndexValue: p.ID,
-	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
-	if err != nil {
-		// TODO::: we must retry more due to record wrote successfully!
-	}
-}
-
-func (p *Product) hashWikiIDforIDDaily() (hash [32]byte) {
-	var buf = make([]byte, 48) // 8+32+8
-	syllab.SetUInt64(buf, 0, productStructureID)
-	copy(buf[8:], p.WikiID[:])
-	syllab.SetInt64(buf, 40, p.WriteTime.RoundToDay())
-	return sha512.Sum512_256(buf)
-}
-
-// IndexWikiDCDaily index to retrieve all ID owned by given p.Wiki + p.DistributionCenterID later.
-// Each year is 365 days that indicate we have 365 index record each year per product wiki on each distribution center!
-func (p *Product) IndexWikiDCDaily() {
-	var indexRequest = gs.HashIndexSetValueReq{
-		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   p.hashWikiIDDistributionCenterIDforIDDaily(),
-		IndexValue: p.ID,
-	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
-	if err != nil {
-		// TODO::: we must retry more due to record wrote successfully!
-	}
-}
-
-func (p *Product) hashWikiIDDistributionCenterIDforIDDaily() (hash [32]byte) {
-	var buf = make([]byte, 80) // 8+32+32+8
-	syllab.SetUInt64(buf, 0, productStructureID)
-	copy(buf[8:], p.WikiID[:])
-	copy(buf[40:], p.DistributionCenterID[:])
-	syllab.SetInt64(buf, 72, p.WriteTime.RoundToDay())
-	return sha512.Sum512_256(buf)
-}
-
-// IndexProductAuction index to retrieve all ID owned by given p.AuctionID later.
-// Use to indiacate product sell by specific auction.
+// IndexIDForProductAuctionID save ID chain for ProductAuctionID
+// Use to indiacate product sell by specific auction. it is better to remove this record each month or year!
 // Don't call in update to an exiting record!
-func (p *Product) IndexProductAuction() {
-	var indexRequest = gs.HashIndexSetValueReq{
+func (p *Product) IndexIDForProductAuctionID() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   p.hashAuctionIDforID(),
+		IndexKey:   p.hashAuctionIDForID(),
 		IndexValue: p.ID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (p *Product) hashAuctionIDforID() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+32
+func (p *Product) hashAuctionIDForID() (hash [32]byte) {
+	const field = "ProductAuctionID"
+	var buf = make([]byte, 40+len(field)) // 8+32
 	syllab.SetUInt64(buf, 0, productStructureID)
 	copy(buf[8:], p.ProductAuctionID[:])
+	copy(buf[80:], field)
 	return sha512.Sum512_256(buf)
 }
 
@@ -266,54 +305,78 @@ func (p *Product) hashAuctionIDforID() (hash [32]byte) {
 	-- LIST FIELDS --
 */
 
+// ListQuiddityIDForDCIDDaily save QuiddityID chain for DCID daily
+func (p *Product) ListQuiddityIDForDCIDDaily() {
+	var indexRequest = pehrest.HashSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   p.hashDCIDForQuiddityIDDaily(),
+		IndexValue: p.QuiddityID,
+	}
+	var err = psdk.HashSetValue(&indexRequest)
+	if err != nil {
+		// TODO::: we must retry more due to record wrote successfully!
+	}
+}
+
+func (p *Product) hashDCIDForQuiddityIDDaily() (hash [32]byte) {
+	const field = "ListDCID"
+	var buf = make([]byte, 48+len(field)) // 8+32+8
+	syllab.SetUInt64(buf, 0, productStructureID)
+	copy(buf[8:], p.DCID[:])
+	syllab.SetInt64(buf, 40, p.WriteTime.RoundToDay())
+	copy(buf[48:], field)
+	return sha512.Sum512_256(buf)
+}
+
 /*
 	-- Temporary INDEXES & LIST --
 */
 
-// TempIndexWikiDC index to retrieve all ID owned by given p.WikiID + p.DistributionCenterID later.
+// TempIndexIDForQuiddityIDDCID save temporary ID chain for QuiddityID+DCID
 // Use to indiacate product stock in the DC. temp index to Pop from it!
-func (p *Product) TempIndexWikiDC() {
-	var indexRequest = gs.HashIndexSetValueReq{
+func (p *Product) TempIndexIDForQuiddityIDDCID() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   p.hashWikiIDDistributionCenterIDforID(),
+		IndexKey:   p.hashQuiddityIDDCIDForID(),
 		IndexValue: p.ID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (p *Product) hashWikiIDDistributionCenterIDforID() (hash [32]byte) {
-	const field = "TempWikiID"
+func (p *Product) hashQuiddityIDDCIDForID() (hash [32]byte) {
+	const field = "TempQuiddityIDDCID"
 	var buf = make([]byte, 72+len(field)) // 8+32+32
 	syllab.SetUInt64(buf, 0, productStructureID)
-	copy(buf[8:], p.WikiID[:])
-	copy(buf[40:], p.DistributionCenterID[:])
+	copy(buf[8:], p.QuiddityID[:])
+	copy(buf[40:], p.DCID[:])
 	copy(buf[72:], field)
 	return sha512.Sum512_256(buf)
 }
 
-// TempListWikiDC store all p.DistributionCenterID related to specific p.WikiID.
+// TempIndexDCIDForQuiddityID save temporary DCID chain for QuiddityID
 // Use to indiacate global product stock. temp index to delete from it!
 // Don't call in update to an exiting record!
-func (p *Product) TempListWikiDC() {
-	var indexRequest = gs.HashIndexSetValueReq{
+func (p *Product) TempIndexDCIDForQuiddityID() {
+	// TODO::: first check if given DCID exist in QuiddityID temp chain
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   p.hashWikiIDforDistributionCenterID(),
-		IndexValue: p.DistributionCenterID,
+		IndexKey:   p.hashQuiddityIDForDCID(),
+		IndexValue: p.DCID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (p *Product) hashWikiIDforDistributionCenterID() (hash [32]byte) {
-	const field = "TempListWikiID"
+func (p *Product) hashQuiddityIDForDCID() (hash [32]byte) {
+	const field = "TempQuiddityID"
 	var buf = make([]byte, 40+len(field)) // 8+32
 	syllab.SetUInt64(buf, 0, productStructureID)
-	copy(buf[8:], p.WikiID[:])
+	copy(buf[8:], p.QuiddityID[:])
 	copy(buf[40:], field)
 	return sha512.Sum512_256(buf)
 }
@@ -338,10 +401,11 @@ func (p *Product) syllabDecoder(buf []byte) (err *er.Error) {
 	copy(p.UserConnectionID[:], buf[120:])
 	copy(p.ID[:], buf[152:])
 	copy(p.OwnerID[:], buf[184:])
-	copy(p.SellerID[:], buf[216:])
-	copy(p.WikiID[:], buf[248:])
+	copy(p.QuiddityID[:], buf[216:])
+
+	copy(p.SellerID[:], buf[248:])
 	copy(p.ProductionID[:], buf[280:])
-	copy(p.DistributionCenterID[:], buf[312:])
+	copy(p.DCID[:], buf[312:])
 	copy(p.ProductAuctionID[:], buf[344:])
 	p.Status = ProductStatus(syllab.GetUInt8(buf, 376))
 	return
@@ -360,10 +424,11 @@ func (p *Product) syllabEncoder() (buf []byte) {
 	copy(buf[120:], p.UserConnectionID[:])
 	copy(buf[152:], p.ID[:])
 	copy(buf[184:], p.OwnerID[:])
-	copy(buf[216:], p.SellerID[:])
-	copy(buf[248:], p.WikiID[:])
+	copy(buf[216:], p.QuiddityID[:])
+
+	copy(buf[248:], p.SellerID[:])
 	copy(buf[280:], p.ProductionID[:])
-	copy(buf[312:], p.DistributionCenterID[:])
+	copy(buf[312:], p.DCID[:])
 	copy(buf[344:], p.ProductAuctionID[:])
 	syllab.SetUInt8(buf, 376, uint8(p.Status))
 	return
@@ -390,20 +455,22 @@ type ProductStatus uint8
 
 // Product status
 const (
-	ProductCreated ProductStatus = iota
+	ProductNotSet ProductStatus = iota
+	ProductCreated
+	ProductChangeDC
+	ProductChangeQuiddity // Split to small size product! || Split from upper size product!
+	ProductChangeOwner
 	ProductVoid
 	ProductPreSale // use in budget analysis and also can be trade!
+
 	// 0x0 for non expire record, 0x1 for sell to first above SuggestPrice||buy first below it!
 
-	// Split from upper size product!
-// Split to small size product!
-
-// ManagerApprove
-// WarehouseApprove
-// ActiveWithApprove
-// ActiveWithoutApprove
-// ActiveWithOrderer
-// Inactive
-// Normal
-// Reject
+	// ManagerApprove
+	// WarehouseApprove
+	// ActiveWithApprove
+	// ActiveWithoutApprove
+	// ActiveWithOrderer
+	// Inactive
+	// Normal
+	// Reject
 )

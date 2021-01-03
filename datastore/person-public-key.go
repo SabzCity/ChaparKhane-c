@@ -5,6 +5,7 @@ package datastore
 import (
 	"crypto/sha512"
 
+	"../libgo/achaemenid"
 	etime "../libgo/earth-time"
 	er "../libgo/error"
 	"../libgo/ganjine"
@@ -12,15 +13,17 @@ import (
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
 	"../libgo/log"
+	"../libgo/pehrest"
+	psdk "../libgo/pehrest-sdk"
 	"../libgo/syllab"
 )
 
 const (
-	personPublicKeyStructureID uint64 = 13183953152561975962
+	personPublicKeyStructureID uint64 = 15598842742611812653
 )
 
 var personPublicKeyStructure = ganjine.DataStructure{
-	ID:                13183953152561975962,
+	ID:                15598842742611812653,
 	IssueDate:         1599027351,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // Other structure name
@@ -29,10 +32,10 @@ var personPublicKeyStructure = ganjine.DataStructure{
 	Structure:         PersonPublicKey{},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "PersonPublicKey",
+		lang.LanguageEnglish: "Person PublicKey",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "store person Public-key (asymmetric) cryptography!",
+		lang.LanguageEnglish: "store person Public-key (asymmetric) cryptography!",
 	},
 	TAGS: []string{
 		"",
@@ -51,31 +54,30 @@ type PersonPublicKey struct {
 	/* Unique data */
 	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
 	UserConnectionID [32]byte // Store to remember which person connection set||chanaged this record!
-	PersonID         [32]byte `ganjine:"Immutable"` // UUID of Person
-	ThingID          [32]byte `ganjine:"Immutable" ganjine-list:"PersonID"`
-	PublicKey        [32]byte `ganjine:"Immutable,Unique" ganjine-index:"PersonID,ThingID"` // Use new algorithm like ECC(256bit) instead of RSA(4096bit)
+	PersonID         [32]byte `index-hash:"RecordID[pair,ThingID],ThingID"` // UUID of Person
+	ThingID          [32]byte `index-hash:"PersonID"`
+	PublicKey        [32]byte // Use new algorithm like ECC(256bit) instead of RSA(4096bit)
 	Status           PersonPublicKeyStatus
 }
 
-// PersonPublicKeyStatus use to indicate PersonPublicKey record status
-type PersonPublicKeyStatus uint8
-
-// PersonPublicKey status
-const (
-	PersonPublicKeyIssueByPassword PersonPublicKeyStatus = iota
-	PersonPublicKeyIssueByPasswordAndOTP
-	PersonPublicKeyIssueByPasswordAndIdentification
-	PersonPublicKeyIssueByPasswordAndOTPAndIdentification
-	PersonPublicKeyExpired
-	PersonPublicKeyRevoked
-)
+// SaveNew method set some data and write entire Quiddity record with all indexes!
+func (ppk *PersonPublicKey) SaveNew() (err *er.Error) {
+	err = ppk.Set()
+	if err != nil {
+		return
+	}
+	ppk.IndexRecordIDForPersonIDThingID()
+	ppk.ListThingIDForPersonID()
+	ppk.ListPersonIDForThingID()
+	return
+}
 
 // Set method set some data and write entire PersonPublicKey record!
 func (ppk *PersonPublicKey) Set() (err *er.Error) {
 	ppk.RecordStructureID = personPublicKeyStructureID
 	ppk.RecordSize = ppk.syllabLen()
 	ppk.WriteTime = etime.Now()
-	ppk.OwnerAppID = server.AppID
+	ppk.OwnerAppID = achaemenid.Server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -84,7 +86,7 @@ func (ppk *PersonPublicKey) Set() (err *er.Error) {
 	ppk.RecordID = sha512.Sum512_256(req.Record[32:])
 	copy(req.Record[0:], ppk.RecordID[:])
 
-	err = gsdk.SetRecord(cluster, &req)
+	err = gsdk.SetRecord(&req)
 	if err != nil {
 		// TODO::: Handle error situation
 	}
@@ -99,7 +101,7 @@ func (ppk *PersonPublicKey) GetByRecordID() (err *er.Error) {
 		RecordStructureID: personPublicKeyStructureID,
 	}
 	var res *gs.GetRecordRes
-	res, err = gsdk.GetRecord(cluster, &req)
+	res, err = gsdk.GetRecord(&req)
 	if err != nil {
 		return
 	}
@@ -115,15 +117,15 @@ func (ppk *PersonPublicKey) GetByRecordID() (err *er.Error) {
 	return
 }
 
-// GetLastByPublicKey method find and read last version of record by given PublicKey
-func (ppk *PersonPublicKey) GetLastByPublicKey() (err *er.Error) {
-	var indexReq = &gs.HashIndexGetValuesReq{
-		IndexKey: ppk.hashPublicKeyforRecordID(),
+// GetLastByPersonIDThingID method find and read last version of record by given PublicKey
+func (ppk *PersonPublicKey) GetLastByPersonIDThingID() (err *er.Error) {
+	var indexReq = &pehrest.HashGetValuesReq{
+		IndexKey: ppk.hashPersonIDThingIDForRecordID(),
 		Offset:   18446744073709551615,
 		Limit:    1,
 	}
-	var indexRes *gs.HashIndexGetValuesRes
-	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
+	var indexRes *pehrest.HashGetValuesRes
+	indexRes, err = psdk.HashGetValues(indexReq)
 	if err != nil {
 		return
 	}
@@ -140,24 +142,27 @@ func (ppk *PersonPublicKey) GetLastByPublicKey() (err *er.Error) {
 	-- PRIMARY INDEXES --
 */
 
-// IndexPublicKey index Unique-Field(PublicKey) chain to retrieve last record version fast later.
+// IndexRecordIDForPersonIDThingID save RecordID chain for PersonID+ThingID
 // Call in each update to the exiting record!
-func (ppk *PersonPublicKey) IndexPublicKey() {
-	var indexRequest = gs.HashIndexSetValueReq{
+func (ppk *PersonPublicKey) IndexRecordIDForPersonIDThingID() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   ppk.hashPublicKeyforRecordID(),
+		IndexKey:   ppk.hashPersonIDThingIDForRecordID(),
 		IndexValue: ppk.RecordID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (ppk *PersonPublicKey) hashPublicKeyforRecordID() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+32
+func (ppk *PersonPublicKey) hashPersonIDThingIDForRecordID() (hash [32]byte) {
+	const field = "PersonIDThingID"
+	var buf = make([]byte, 72+len(field)) // 8+32+32
 	syllab.SetUInt64(buf, 0, personPublicKeyStructureID)
-	copy(buf[8:], ppk.PublicKey[:])
+	copy(buf[8:], ppk.PersonID[:])
+	copy(buf[40:], ppk.ThingID[:])
+	copy(buf[72:], field)
 	return sha512.Sum512_256(buf)
 }
 
@@ -165,71 +170,54 @@ func (ppk *PersonPublicKey) hashPublicKeyforRecordID() (hash [32]byte) {
 	-- SECONDARY INDEXES --
 */
 
-// IndexPerson index to retrieve Unique-Field(PublicKey) owned by given PersonID
-// Don't call in update to an exiting record!
-func (ppk *PersonPublicKey) IndexPerson() {
-	var indexRequest = gs.HashIndexSetValueReq{
-		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   ppk.hashPersonIDforPublicKey(),
-		IndexValue: ppk.PublicKey,
-	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
-	if err != nil {
-		// TODO::: we must retry more due to record wrote successfully!
-	}
-}
-
-func (ppk *PersonPublicKey) hashPersonIDforPublicKey() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+32
-	syllab.SetUInt64(buf, 0, personPublicKeyStructureID)
-	copy(buf[8:], ppk.PersonID[:])
-	return sha512.Sum512_256(buf)
-}
-
-// IndexThing index to retrieve Unique-Field(PublicKey) owned by given ThingID
-// Don't call in update to an exiting record!
-func (ppk *PersonPublicKey) IndexThing() {
-	var indexRequest = gs.HashIndexSetValueReq{
-		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   ppk.hashThingIDforPublicKey(),
-		IndexValue: ppk.PublicKey,
-	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
-	if err != nil {
-		// TODO::: we must retry more due to record wrote successfully!
-	}
-}
-
-func (ppk *PersonPublicKey) hashThingIDforPublicKey() (hash [32]byte) {
-	var buf = make([]byte, 40) // 8+32
-	syllab.SetUInt64(buf, 0, personPublicKeyStructureID)
-	copy(buf[8:], ppk.ThingID[:])
-	return sha512.Sum512_256(buf)
-}
+// ??
 
 /*
 	-- LIST FIELDS --
 */
 
-// ListThingIDforPersonID list all ThingID own by specific PersonID.
+// ListThingIDForPersonID save ThingID chain for PersonID
 // Don't call in update to an exiting record!
-func (ppk *PersonPublicKey) ListThingIDforPersonID() {
-	var indexRequest = gs.HashIndexSetValueReq{
+func (ppk *PersonPublicKey) ListThingIDForPersonID() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   ppk.hashPersonIDforThingID(),
+		IndexKey:   ppk.hashPersonIDForThingID(),
 		IndexValue: ppk.ThingID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (ppk *PersonPublicKey) hashPersonIDforThingID() (hash [32]byte) {
+func (ppk *PersonPublicKey) hashPersonIDForThingID() (hash [32]byte) {
 	const field = "ListThingID"
 	var buf = make([]byte, 40+len(field)) // 8+32
 	syllab.SetUInt64(buf, 0, personPublicKeyStructureID)
 	copy(buf[8:], ppk.PersonID[:])
+	copy(buf[40:], field)
+	return sha512.Sum512_256(buf)
+}
+
+// ListPersonIDForThingID list PersonID chain for ThingID
+// Don't call in update to an exiting record!
+func (ppk *PersonPublicKey) ListPersonIDForThingID() {
+	var indexRequest = pehrest.HashSetValueReq{
+		Type:       gs.RequestTypeBroadcast,
+		IndexKey:   ppk.hashPersonIDForThingID(),
+		IndexValue: ppk.PersonID,
+	}
+	var err = psdk.HashSetValue(&indexRequest)
+	if err != nil {
+		// TODO::: we must retry more due to record wrote successfully!
+	}
+}
+
+func (ppk *PersonPublicKey) hashThingIDForPersonID() (hash [32]byte) {
+	const field = "ListPersonID"
+	var buf = make([]byte, 40+len(field)) // 8+32
+	syllab.SetUInt64(buf, 0, personPublicKeyStructureID)
+	copy(buf[8:], ppk.ThingID[:])
 	copy(buf[40:], field)
 	return sha512.Sum512_256(buf)
 }
@@ -288,3 +276,20 @@ func (ppk *PersonPublicKey) syllabHeapLen() (ln uint32) {
 func (ppk *PersonPublicKey) syllabLen() (ln uint64) {
 	return uint64(ppk.syllabStackLen() + ppk.syllabHeapLen())
 }
+
+/*
+	-- Record types --
+*/
+
+// PersonPublicKeyStatus use to indicate PersonPublicKey record status
+type PersonPublicKeyStatus uint8
+
+// PersonPublicKey status
+const (
+	PersonPublicKeyIssueByPassword PersonPublicKeyStatus = iota
+	PersonPublicKeyIssueByPasswordAndOTP
+	PersonPublicKeyIssueByPasswordAndIdentification
+	PersonPublicKeyIssueByPasswordAndOTPAndIdentification
+	PersonPublicKeyExpired
+	PersonPublicKeyRevoked
+)

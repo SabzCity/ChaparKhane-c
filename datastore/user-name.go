@@ -5,6 +5,7 @@ package datastore
 import (
 	"crypto/sha512"
 
+	"../libgo/achaemenid"
 	etime "../libgo/earth-time"
 	er "../libgo/error"
 	"../libgo/ganjine"
@@ -12,15 +13,17 @@ import (
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
 	"../libgo/log"
+	"../libgo/pehrest"
+	psdk "../libgo/pehrest-sdk"
 	"../libgo/syllab"
 )
 
 const (
-	userNameStructureID uint64 = 12744998016788909151
+	userNameStructureID uint64 = 5534172064690062028
 )
 
 var userNameStructure = ganjine.DataStructure{
-	ID:                12744998016788909151,
+	ID:                5534172064690062028,
 	IssueDate:         1599020151,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // Other structure name
@@ -29,10 +32,10 @@ var userNameStructure = ganjine.DataStructure{
 	Structure:         UserName{},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "UserName",
+		lang.LanguageEnglish: "User Name",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "store user name that translate it to UserID for any purpose like login, send message, ...!",
+		lang.LanguageEnglish: "store user name that translate it to UserID for any purpose like login, send message, ...!",
 	},
 	TAGS: []string{
 		"",
@@ -51,27 +54,29 @@ type UserName struct {
 	/* Unique data */
 	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
 	UserConnectionID [32]byte // Store to remember which user connection set||chanaged this record!
-	UserID           [32]byte `ganjine:"Unique" hash-index:"RecordID"`
-	Username         string   `hash-index:"UserID"` // It is not replace of user ID! It usually use to find user by their friends!
+	UserID           [32]byte `index-hash:"RecordID"`
+	Username         string   `index-hash:"UserID"` // It is not replace of user ID! It usually use to find user by their friends!
 	Status           UserNameStatus
 }
 
-// UserNameStatus indicate UserName record status
-type UserNameStatus uint8
+// SaveNew method set some data and write entire UserName record with all indexes!
+func (un *UserName) SaveNew() (err *er.Error) {
+	err = un.Set()
+	if err != nil {
+		return
+	}
 
-// UserName status
-const (
-	UserNameRegister UserNameStatus = iota
-	UserNameRemove
-	UserNameBlockByJustice
-)
+	un.IndexRecordIDForUserID()
+	un.IndexUserIDForUserName()
+	return
+}
 
 // Set method set some data and write entire UserName record!
 func (un *UserName) Set() (err *er.Error) {
 	un.RecordStructureID = userNameStructureID
 	un.RecordSize = un.syllabLen()
 	un.WriteTime = etime.Now()
-	un.OwnerAppID = server.AppID
+	un.OwnerAppID = achaemenid.Server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -80,7 +85,7 @@ func (un *UserName) Set() (err *er.Error) {
 	un.RecordID = sha512.Sum512_256(req.Record[32:])
 	copy(req.Record[0:], un.RecordID[:])
 
-	err = gsdk.SetRecord(cluster, &req)
+	err = gsdk.SetRecord(&req)
 	if err != nil {
 		// TODO::: Handle error situation
 	}
@@ -95,7 +100,7 @@ func (un *UserName) GetByRecordID() (err *er.Error) {
 		RecordStructureID: userNameStructureID,
 	}
 	var res *gs.GetRecordRes
-	res, err = gsdk.GetRecord(cluster, &req)
+	res, err = gsdk.GetRecord(&req)
 	if err != nil {
 		return
 	}
@@ -113,13 +118,13 @@ func (un *UserName) GetByRecordID() (err *er.Error) {
 
 // GetLastByUserID method find and read last version of record by given UserID
 func (un *UserName) GetLastByUserID() (err *er.Error) {
-	var indexReq = &gs.HashIndexGetValuesReq{
+	var indexReq = &pehrest.HashGetValuesReq{
 		IndexKey: un.hashUserIDfoRecordID(),
 		Offset:   18446744073709551615,
 		Limit:    1,
 	}
-	var indexRes *gs.HashIndexGetValuesRes
-	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
+	var indexRes *pehrest.HashGetValuesRes
+	indexRes, err = psdk.HashGetValues(indexReq)
 	if err != nil {
 		return
 	}
@@ -134,13 +139,13 @@ func (un *UserName) GetLastByUserID() (err *er.Error) {
 
 // GetLastByUserName method find and read last version of record by given UserName
 func (un *UserName) GetLastByUserName() (err *er.Error) {
-	var indexReq = &gs.HashIndexGetValuesReq{
+	var indexReq = &pehrest.HashGetValuesReq{
 		IndexKey: un.hashUserNameforUserID(),
 		Offset:   18446744073709551615,
 		Limit:    1,
 	}
-	var indexRes *gs.HashIndexGetValuesRes
-	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
+	var indexRes *pehrest.HashGetValuesRes
+	indexRes, err = psdk.HashGetValues(indexReq)
 	if err != nil {
 		return
 	}
@@ -154,18 +159,22 @@ func (un *UserName) GetLastByUserName() (err *er.Error) {
 }
 
 /*
+	-- Search Methods --
+*/
+
+/*
 	-- PRIMARY INDEXES --
 */
 
-// IndexUserID index Unique-Field(UserID) chain to retrieve last record version fast later.
+// IndexRecordIDForUserID  save RecordID chain for UserID
 // Call in each update to the exiting record!
-func (un *UserName) IndexUserID() {
-	var indexRequest = gs.HashIndexSetValueReq{
+func (un *UserName) IndexRecordIDForUserID() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
 		IndexKey:   un.hashUserIDfoRecordID(),
 		IndexValue: un.RecordID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
@@ -182,15 +191,15 @@ func (un *UserName) hashUserIDfoRecordID() (hash [32]byte) {
 	-- SECONDARY INDEXES --
 */
 
-// IndexUserName index to retrieve all un.UserID owned by given Username later.
+// IndexUserIDForUserName save UserID chain for Username
 // Don't call in update to an exiting record!
-func (un *UserName) IndexUserName() {
-	var indexRequest = gs.HashIndexSetValueReq{
+func (un *UserName) IndexUserIDForUserName() {
+	var indexRequest = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
 		IndexKey:   un.hashUserNameforUserID(),
 		IndexValue: un.UserID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &indexRequest)
+	var err = psdk.HashSetValue(&indexRequest)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
@@ -257,3 +266,17 @@ func (un *UserName) syllabHeapLen() (ln uint32) {
 func (un *UserName) syllabLen() (ln uint64) {
 	return uint64(un.syllabStackLen() + un.syllabHeapLen())
 }
+
+/*
+	-- Record types --
+*/
+
+// UserNameStatus indicate UserName record status
+type UserNameStatus uint8
+
+// UserName status
+const (
+	UserNameRegister UserNameStatus = iota
+	UserNameRemove
+	UserNameBlockByJustice
+)

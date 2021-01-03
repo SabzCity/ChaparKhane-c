@@ -5,6 +5,7 @@ package datastore
 import (
 	"crypto/sha512"
 
+	"../libgo/achaemenid"
 	etime "../libgo/earth-time"
 	er "../libgo/error"
 	"../libgo/ganjine"
@@ -12,16 +13,18 @@ import (
 	gs "../libgo/ganjine-services"
 	lang "../libgo/language"
 	"../libgo/log"
+	"../libgo/pehrest"
+	psdk "../libgo/pehrest-sdk"
 	"../libgo/picture"
 	"../libgo/syllab"
 )
 
 const (
-	userPictureStructureID uint64 = 9588981481850124477
+	userPictureStructureID uint64 = 14810657980163930313
 )
 
 var userPictureStructure = ganjine.DataStructure{
-	ID:                9588981481850124477,
+	ID:                14810657980163930313,
 	IssueDate:         1599023751,
 	ExpiryDate:        0,
 	ExpireInFavorOf:   "", // Other structure name
@@ -30,10 +33,10 @@ var userPictureStructure = ganjine.DataStructure{
 	Structure:         UserPicture{},
 
 	Name: map[lang.Language]string{
-		lang.EnglishLanguage: "UserPicture",
+		lang.LanguageEnglish: "User Picture",
 	},
 	Description: map[lang.Language]string{
-		lang.EnglishLanguage: "store any user type e.g. person,org,... official pictures.",
+		lang.LanguageEnglish: "store any user type e.g. person,org,... official pictures.",
 	},
 	TAGS: []string{
 		"",
@@ -52,28 +55,28 @@ type UserPicture struct {
 	/* Unique data */
 	AppInstanceID    [32]byte // Store to remember which app instance set||chanaged this record!
 	UserConnectionID [32]byte // Store to remember which user connection set||chanaged this record!
-	UserID           [32]byte `ganjine:"Unique" hash-index:"RecordID"`
+	UserID           [32]byte `index-hash:"RecordID"`
 	ObjectID         [32]byte // UUID of picture object.
 	Rating           picture.Rating
 	Status           UserPictureStatus
 }
 
-// UserPictureStatus indicate UserPicture status
-type UserPictureStatus uint8
-
-// UserPicture status
-const (
-	UserPictureRegister UserPictureStatus = iota
-	UserPictureRemove
-	UserPictureBlockByJustice
-)
+// SaveNew method set some data and write entire Quiddity record with all indexes!
+func (up *UserPicture) SaveNew() (err *er.Error) {
+	err = up.Set()
+	if err != nil {
+		return
+	}
+	up.IndexRecordIDForUserID()
+	return
+}
 
 // Set method set some data and write entire UserPicture record!
 func (up *UserPicture) Set() (err *er.Error) {
 	up.RecordStructureID = userPictureStructureID
 	up.RecordSize = up.syllabLen()
 	up.WriteTime = etime.Now()
-	up.OwnerAppID = server.AppID
+	up.OwnerAppID = achaemenid.Server.AppID
 
 	var req = gs.SetRecordReq{
 		Type:   gs.RequestTypeBroadcast,
@@ -82,7 +85,7 @@ func (up *UserPicture) Set() (err *er.Error) {
 	up.RecordID = sha512.Sum512_256(req.Record[32:])
 	copy(req.Record[0:], up.RecordID[:])
 
-	err = gsdk.SetRecord(cluster, &req)
+	err = gsdk.SetRecord(&req)
 	if err != nil {
 		// TODO::: Handle error situation
 	}
@@ -97,7 +100,7 @@ func (up *UserPicture) GetByRecordID() (err *er.Error) {
 		RecordStructureID: userPictureStructureID,
 	}
 	var res *gs.GetRecordRes
-	res, err = gsdk.GetRecord(cluster, &req)
+	res, err = gsdk.GetRecord(&req)
 	if err != nil {
 		return
 	}
@@ -115,13 +118,13 @@ func (up *UserPicture) GetByRecordID() (err *er.Error) {
 
 // GetLastByUserID find and read last version of record by given UserID
 func (up *UserPicture) GetLastByUserID() (err *er.Error) {
-	var indexReq = &gs.HashIndexGetValuesReq{
-		IndexKey: up.hashUserIDforRecordID(),
+	var indexReq = &pehrest.HashGetValuesReq{
+		IndexKey: up.hashUserIDForRecordID(),
 		Offset:   18446744073709551615,
 		Limit:    1,
 	}
-	var indexRes *gs.HashIndexGetValuesRes
-	indexRes, err = gsdk.HashIndexGetValues(cluster, indexReq)
+	var indexRes *pehrest.HashGetValuesRes
+	indexRes, err = psdk.HashGetValues(indexReq)
 	if err != nil {
 		return
 	}
@@ -135,23 +138,27 @@ func (up *UserPicture) GetLastByUserID() (err *er.Error) {
 }
 
 /*
+	-- Search Methods --
+*/
+
+/*
 	-- PRIMARY INDEXES --
 */
 
-// IndexUserID index up.UserID to retrieve record fast later.
-func (up *UserPicture) IndexUserID() {
-	var userIDIndex = gs.HashIndexSetValueReq{
+// IndexRecordIDForUserID save RecordID chain for UserID
+func (up *UserPicture) IndexRecordIDForUserID() {
+	var userIDIndex = pehrest.HashSetValueReq{
 		Type:       gs.RequestTypeBroadcast,
-		IndexKey:   up.hashUserIDforRecordID(),
+		IndexKey:   up.hashUserIDForRecordID(),
 		IndexValue: up.RecordID,
 	}
-	var err = gsdk.HashIndexSetValue(cluster, &userIDIndex)
+	var err = psdk.HashSetValue(&userIDIndex)
 	if err != nil {
 		// TODO::: we must retry more due to record wrote successfully!
 	}
 }
 
-func (up *UserPicture) hashUserIDforRecordID() (hash [32]byte) {
+func (up *UserPicture) hashUserIDForRecordID() (hash [32]byte) {
 	var buf = make([]byte, 40) // 8+32
 	syllab.SetUInt64(buf, 0, userPictureStructureID)
 	copy(buf[8:], up.UserID[:])
@@ -212,3 +219,18 @@ func (up *UserPicture) syllabHeapLen() (ln uint32) {
 func (up *UserPicture) syllabLen() (ln uint64) {
 	return uint64(up.syllabStackLen() + up.syllabHeapLen())
 }
+
+/*
+	-- Record types --
+*/
+
+// UserPictureStatus indicate UserPicture status
+type UserPictureStatus uint8
+
+// UserPicture status
+const (
+	UserPictureUnset UserPictureStatus = iota
+	UserPictureRegister
+	UserPictureRemove
+	UserPictureBlockByJustice
+)
