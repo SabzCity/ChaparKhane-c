@@ -1,17 +1,18 @@
 /* For license and copyright information please see LEGAL file in repository */
 
 import '../libjs/pages.js'
-import '../libjs/errors.js'
+import '../libjs/error/error.js'
+import '../libjs/gs1/urn.js'
 import '../libjs/widget-barcode/camera-scanner.js'
 import '../libjs/widget-barcode/barcode-reader.js'
 import '../libjs/widget-notification/force-leave-page.js'
-import '../../sdk-js/find-wiki-by-title.js'
-import '../../sdk-js/find-wiki-by-uri.js'
-import '../../sdk-js/get-wiki-by-id.js'
-import '../../sdk-js/get-person-number-status.js'
-import '../../sdk-js/get-organization-by-name.js'
-import '../../sdk-js/get-organization-by-id.js'
-import '../../sdk-js/register-new-person.js'
+import '../libjs/sdk/sabz.city/find-quiddity-by-title.js'
+import '../libjs/sdk/sabz.city/find-quiddity-by-uri.js'
+import '../libjs/sdk/sabz.city/get-quiddity.js'
+import '../libjs/sdk/sabz.city/get-person-number-status.js'
+import '../libjs/sdk/sabz.city/get-organization.js'
+import '../libjs/sdk/sabz.city/register-person.js'
+import '../libjs/sdk/sabz.city/register-product-invoice.js'
 
 const invoicePage = {
     ID: "invoice",
@@ -29,11 +30,10 @@ const invoicePage = {
         Tags: ["LocaleText[5]"]
     },
     Icon: "note",
-    Related: ["store", "wikis"],
+    Related: ["store", "quiddities"],
     HTML: () => ``,
     CSS: '',
     Templates: {
-        "new": () => ``,
         "row": (pr) => ``
     },
 }
@@ -41,7 +41,7 @@ pages.RegisterPage(invoicePage)
 
 invoicePage.ConnectedCallback = function () {
     // TODO::: Do any logic before page render
-    window.document.body.innerHTML = this.HTML()
+    this.EnableNew()
     // TODO::: Do any logic after page render
 }
 
@@ -69,9 +69,9 @@ invoicePage.FindInputKeyDownEvent = async function (element) {
     if (event.keyCode === 13) { // event.key === 'Enter'
         if (element.value !== "") {
             if (element.value.includes(":")) {
-                pages.Router({}, "/wiki?uri=" + element.value)
+                pages.Router({}, "/quiddity?uri=" + element.value)
             } else {
-                pages.Router({}, "/wiki?title=" + element.value)
+                pages.Router({}, "/quiddity?title=" + element.value)
             }
         }
     } else {
@@ -85,17 +85,19 @@ invoicePage.FindInputSearchEvent = async function (element) {
 
 invoicePage.EnableNew = async function () {
     if (this.newInvoiceList) {
+        if (this.newInvoiceList.State === InvoiceStateRegistered) {
+
+        }
         let forceLeave = await forceLeavePageWidget.ConnectedCallback()
         if (!forceLeave) {
             return
         }
-        window.document.body.innerHTML = this.HTML()
     }
 
-    const mainElement = document.getElementById('main')
-    mainElement.insertAdjacentHTML('beforeend', this.Templates["new"]())
+    window.document.body.innerHTML = this.HTML()
 
     this.newInvoiceList = {
+        PosID: localStorage.getItem('LastPosIDInInvoiceTransferPage') || "",
         poolByID: {},
         poolByURI: {},
         poolByTitle: {},
@@ -103,23 +105,34 @@ invoicePage.EnableNew = async function () {
         SuggestPrice: 0,
         PayablePrice: 0,
         ProductNumber: 0,
+        State: InvoiceStateNew,
     }
     this.tableBodyElement = document.getElementById('tableBody')
     this.tableFooterElement = document.getElementById('tableFooter')
 }
 
 invoicePage.addProductToListByURIInput = function (element) {
+    // Tell user that some key down recognized!
+    HTMLAudioElement.Beep(50, 300, 3)
+
     if (event.keyCode === 13) { // event.key === 'Enter'
         const uri = element.value
-        if (uri.length === 13) {
-            this.addProductToListByURI("urn:gs1:ean13:" + uri)
-        } else {
-            element.setCustomValidity("Not valid barcode!")
-            element.reportValidity()
-            return
+        switch (uri.length) {
+            case 8:
+            case 12:
+            case 13:
+            case 14:
+                this.addProductToListByURI(GTINToURN(uri))
+                element.value = ""
+                element.parentElement.toggle()
+                return
+            case 16:
+                this.addProductToListByURI("urn:epc:id:iran:" + uri)
+                return
+            default:
+                element.warnValidity()
+                return
         }
-        element.value = ""
-        element.parentElement.toggle()
     }
 }
 
@@ -135,91 +148,93 @@ invoicePage.addProductToListByTitleInput = function (element) {
 invoicePage.addProductToListByURI = async function (uri) {
     let productInfo = this.newInvoiceList.poolByURI[uri]
     if (!productInfo) {
-        // let GetWikiByIDRes
-        // try {
-        //     // FindWikiByURIReq is the request structure of FindWikiByURI()
-        //     const FindWikiByURIReq = {
-        //         "URI": uri, // string
-        //         "Offset": 1844674407370955,
-        //         "Limit": 1,
-        //     }
-        //     let FindWikiByURIRes = FindWikiByURI(FindWikiByURIReq)
+        // let GetQuiddityRes
+        // let GetProductPriceRes
+        // let GetProductAuctionRes
+        try {
+            const FindQuiddityByURIReq = {
+                "URI": uri,
+                "Offset": 1844674407370955,
+                "Limit": 1,
+            }
+            const FindQuiddityByURIRes = await FindQuiddityByURI(FindQuiddityByURIReq)
 
-        //     try {
-        //         // GetWikiByIDReq is the request structure of GetWikiByID()
-        //         const GetWikiByIDReq = {
-        //             "ID": FindWikiByURIRes.IDs[0],
-        //             "Language": users.active.ContentPreferences.Language.id,
-        //         }
-        //         GetWikiByIDRes = await GetWikiByID(GetWikiByIDReq)
-        //         GetWikiByIDRes.ID = GetWikiByIDReq.ID
-        //     } catch (err) {
-        //         errors.HandleError(err)
-        //         return
-        //     }
-        // } catch (err) {
-        //     errors.HandleError(err)
-        //     return
-        // }
+            const GetQuiddityReq = {
+                "ID": FindQuiddityByURIRes.IDs[0],
+                "Language": users.active.ContentPreferences.Language.ID,
+            }
+            var GetQuiddityRes = await GetQuiddity(GetQuiddityReq)
+
+            const GetProductPriceReq = {
+                "QuiddityID": FindQuiddityByURIRes.IDs[0],
+            }
+            var GetProductPriceRes = await GetProductPrice(GetProductPriceReq)
+
+            // TODO::: improve to check other auction not just default one.
+            const FindProductAuctionByQuiddityIDReq = {
+                "QuiddityID": FindQuiddityByURIRes.IDs[0],
+                "Offset": 0,
+                "Limit": 1,
+            }
+            const FindProductAuctionByQuiddityIDRes = await FindProductAuctionByQuiddityID(FindProductAuctionByQuiddityIDReq)
+
+            // GetProductAuctionReq is the request structure of GetProductAuction()
+            const GetProductAuctionReq = {
+                "ID": FindProductAuctionByQuiddityIDRes.IDs[0],
+            }
+            var GetProductAuctionRes = await GetProductAuction(GetProductAuctionReq)
+
+        } catch (err) {
+            PersiaError.NotifyError(err)
+            return
+        }
 
         productInfo = {
-            // WikiID: GetWikiByIDRes.ID,
-            // URI: GetWikiByIDRes.URI,
-            // Title: GetWikiByIDRes.Title,
-            URI: uri,
-            Title: uri,
-            SuggestPrice: 12500,
-            PayablePrice: 10000,
+            Quiddity: GetQuiddityRes,
+            ProductPrice: GetProductPriceRes,
+            ProductAuction: GetProductAuctionRes,
             ProductNumber: 1,
-            Actions: "",
         }
     }
-
-    // Tell user that product recognized!
-    barcodeCameraScannerWidget.Beep(200, 700, 5)
-
     this.addProductToList(productInfo)
 }
 
 invoicePage.addProductToListByTitle = async function (title) {
+    alert("Sorry! Not implemented yet!")
+    return
     let productInfo = this.newInvoiceList.poolByTitle[title]
     if (!productInfo) {
-        // let GetWikiByIDRes
+        let GetQuiddityRes
         // try {
-        //     // FindWikiByTitleReq is the request structure of FindWikiByTitle()
-        //     const FindWikiByTitleReq = {
+        //     // FindQuiddityByTitleReq is the request structure of FindQuiddityByTitle()
+        //     const FindQuiddityByTitleReq = {
         //         "Title": title,
         //         "Offset": 1844674407370955,
         //         "Limit": 1,
         //     }
-        //     let FindWikiByTitleRes = await FindWikiByTitle(FindWikiByTitleReq)
+        //     let FindQuiddityByTitleRes = await FindQuiddityByTitle(FindQuiddityByTitleReq)
 
         //     try {
-        //         // GetWikiByIDReq is the request structure of GetWikiByID()
-        //         const GetWikiByIDReq = {
-        //             "ID": FindWikiByTitleRes.IDs[0],
-        //             "Language": users.active.ContentPreferences.Language.id,
+        //         // GetQuiddityReq is the request structure of GetQuiddity()
+        //         const GetQuiddityReq = {
+        //             "ID": FindQuiddityByTitleRes.IDs[0],
+        //             "Language": users.active.ContentPreferences.Language.ID,
         //         }
-        //         GetWikiByIDRes = await GetWikiByID(GetWikiByIDReq)
-        //         GetWikiByIDRes.ID = GetWikiByIDReq.ID
+        //         GetQuiddityRes = await GetQuiddity(GetQuiddityReq)
         //     } catch (err) {
-        //         errors.HandleError(err)
+        //         PersiaError.NotifyError(err)
         //         return
         //     }
         // } catch (err) {
-        //     errors.HandleError(err)
+        //     PersiaError.NotifyError(err)
         //     return
         // }
 
         productInfo = {
-            // WikiID: GetWikiByIDRes.ID,
-            // URI: GetWikiByIDRes.URI,
-            // Title: GetWikiByIDRes.Title,
-            Title: title,
-            SuggestPrice: 12500,
-            PayablePrice: 10000,
+            Quiddity: GetQuiddityRes,
+            ProductPrice: GetProductPriceRes,
+            ProductAuction: GetProductAuctionRes,
             ProductNumber: 1,
-            Actions: "",
         }
     }
     this.addProductToList(productInfo)
@@ -237,12 +252,15 @@ invoicePage.addProductToList = async function (productInfo) {
     } else {
         this.newInvoiceList.RowNumber++
         productInfo.ID = this.newInvoiceList.RowNumber
+        productInfo.Title = productInfo.Quiddity.Title
+        productInfo.SuggestPrice = productInfo.ProductPrice.Price
+        productInfo.PayablePrice = Math.ceil(productInfo.ProductPrice.Price - math.PerMyriad.Calculate(productInfo.ProductPrice.Price, productInfo.ProductAuction.Discount))
 
         this.tableBodyElement.insertAdjacentHTML('beforeend', this.Templates["row"](productInfo))
         productInfo.Element = this.tableBodyElement.lastChild
 
         this.newInvoiceList.poolByID[productInfo.ID] = productInfo
-        this.newInvoiceList.poolByURI[productInfo.URI] = productInfo
+        this.newInvoiceList.poolByURI[productInfo.Quiddity.URI] = productInfo
         this.newInvoiceList.poolByTitle[productInfo.Title] = productInfo
 
         this.newInvoiceList.SuggestPrice += productInfo.SuggestPrice
@@ -253,13 +271,19 @@ invoicePage.addProductToList = async function (productInfo) {
 }
 
 invoicePage.updateTableFooter = function () {
+    // Tell user that some changes to invoice list recognized and occur!
+    HTMLAudioElement.Beep(200, 700, 5)
+
     this.tableFooterElement.children[0].innerText = this.newInvoiceList.RowNumber
-    this.tableFooterElement.children[2].innerText = this.newInvoiceList.SuggestPrice
-    this.tableFooterElement.children[3].innerText = this.newInvoiceList.PayablePrice
+    this.tableFooterElement.children[2].innerText = this.newInvoiceList.SuggestPrice.toLocaleString()
+    this.tableFooterElement.children[3].innerText = this.newInvoiceList.PayablePrice.toLocaleString()
     this.tableFooterElement.children[4].innerText = this.newInvoiceList.ProductNumber
+
+    window.scrollTo(0, document.body.scrollHeight);
 }
 
 invoicePage.increaseProductNumber = function (element) {
+    element.blur()
     const rowElement = element.parentElement.parentElement
     const ID = rowElement.children[0].innerText
     const productInfo = this.newInvoiceList.poolByID[ID]
@@ -274,6 +298,7 @@ invoicePage.increaseProductNumber = function (element) {
 }
 
 invoicePage.decreaseProductNumber = function (element) {
+    element.blur()
     const rowElement = element.parentElement.parentElement
     const ID = rowElement.children[0].innerText
     const productInfo = this.newInvoiceList.poolByID[ID]
@@ -290,17 +315,18 @@ invoicePage.decreaseProductNumber = function (element) {
 }
 
 invoicePage.removeProductNumber = function (element) {
+    element.blur()
     const rowElement = element.parentElement.parentElement
     const ID = rowElement.children[0].innerText
     const productInfo = this.newInvoiceList.poolByID[ID]
 
     delete this.newInvoiceList.poolByID[productInfo.ID]
     delete this.newInvoiceList.poolByTitle[productInfo.Title]
-    delete this.newInvoiceList.poolByURI[productInfo.URI]
+    delete this.newInvoiceList.poolByURI[productInfo.Quiddity.URI]
     rowElement.remove()
 
     this.newInvoiceList.RowNumber--
-    this.newInvoiceList.SuggestPrice -= (productInfo.PayablePrice * productInfo.ProductNumber)
+    this.newInvoiceList.SuggestPrice -= (productInfo.SuggestPrice * productInfo.ProductNumber)
     this.newInvoiceList.PayablePrice -= (productInfo.PayablePrice * productInfo.ProductNumber)
     this.newInvoiceList.ProductNumber -= productInfo.ProductNumber
     this.updateTableFooter()
@@ -309,57 +335,44 @@ invoicePage.removeProductNumber = function (element) {
 invoicePage.checkDCNameElement = async function (element) {
     if (event.keyCode === 13) { // event.key === 'Enter'
         try {
-            // GetOrganizationByNameReq is the request structure of GetOrganizationByName()
-            const GetOrganizationByNameReq = {
+            // FindOrganizationByNameReq is the request structure of FindOrganizationByName()
+            const FindOrganizationByNameReq = {
                 "Name": element.value,
             }
-            let res = await GetOrganizationByName(GetOrganizationByNameReq, true)
+            let res = await FindOrganizationByName(FindOrganizationByNameReq, true)
 
             try {
-                // GetOrganizationByIDReq is the request structure of GetOrganizationByID()
-                const GetOrganizationByIDReq = {
+                // GetOrganizationReq is the request structure of GetOrganization()
+                const GetOrganizationReq = {
                     "ID": res.ID,
                 }
-                org = await GetOrganizationByID(GetOrganizationByIDReq, true)
+                org = await GetOrganization(GetOrganizationReq, true)
                 this.newInvoiceList.DC = org
 
                 localStorage.setItem('LastDCNameInInvoicePage', org.Name)
-                localStorage.setItem('LastDCIDInInvoicePage', org.ID)
+                localStorage.setItem('LastSenderDCIDInInvoicePage', org.ID)
             } catch (err) {
-                return errors.HandleError(err)
+                return PersiaError.NotifyError(err)
             }
         } catch (err) {
-            return errors.HandleError(err)
+            return PersiaError.NotifyError(err)
         }
     }
 }
 
-invoicePage.checkDCIDElement = async function (element) {
+invoicePage.posIDInput = async function (element) {
     if (event.keyCode === 13) { // event.key === 'Enter'
-        try {
-            // GetOrganizationByIDReq is the request structure of GetOrganizationByID()
-            const GetOrganizationByIDReq = {
-                "ID": element.value,
-            }
-            let org = await GetOrganizationByID(GetOrganizationByIDReq, true)
-            this.newInvoiceList.DC = org
-
-            localStorage.setItem('LastDCNameInInvoicePage', org.Name)
-            localStorage.setItem('LastDCIDInInvoicePage', org.ID)
-        } catch (err) {
-            errors.HandleError(err)
-        }
+        this.newInvoiceList.PosID = element.value
+        localStorage.setItem('LastPosIDInInvoiceTransferPage', element.value)
+        element.focusNext()
     }
 }
 
 invoicePage.checkBuyerTelElement = async function (element) {
     if (event.keyCode === 13) { // event.key === 'Enter'
         let tel = element.value
-
-        // TODO::: Need to validate phone number here?
         if (!tel) {
-            element.setCustomValidity("Number Not Valid")
-            element.reportValidity()
+            element.warnValidity()
             return
         }
         if (tel.startsWith("0")) tel = tel.substring(1)
@@ -374,32 +387,77 @@ invoicePage.checkBuyerTelElement = async function (element) {
             let res = await GetPersonNumberStatus(GetPersonNumberStatusReq)
             if (res.Status == 1 || res.Status == 3) {
                 this.newInvoiceList.BuyerUserID = res.PersonID
+                element.focusNext()
             } else {
+                document.getElementById('suggestRegisterUserNumber').innerText = this.newInvoiceList.BuyerTelNumber
                 document.getElementById('suggestRegisterUser').toggle()
             }
         } catch (err) {
-            return errors.HandleError(err)
+            return PersiaError.NotifyError(err)
         }
 
-        element.parentElement.toggle()
+        // element.parentElement.toggle()
     }
 }
 
 invoicePage.registerUser = async function () {
     try {
-        const RegisterNewPersonReq = {
+        const RegisterPersonReq = {
             "PhoneNumber": this.newInvoiceList.BuyerTelNumber,
         }
-        let res = await RegisterNewPerson(RegisterNewPersonReq)
+        let res = await RegisterPerson(RegisterPersonReq)
         this.newInvoiceList.BuyerUserID = res.PersonID
+        this.sendTransfer()
         document.getElementById('suggestRegisterUser').toggle()
     } catch (err) {
-        errors.HandleError(err)
+        PersiaError.NotifyError(err)
     }
 }
 
+invoicePage.sendTransfer = async function (buttonElement) {
+    if (!this.newInvoiceList.BuyerUserID) {
+        PersiaError.NotifyError("خریدار جهت ثبت فاکتور ثبت نشده است")
+        return
+    }
+
+    buttonElement.disabled = true
+    this.newInvoiceList.State = InvoiceStateSendToPOS
+    const invoiceStateContainerElement = document.getElementById("invoiceStateContainer")
+    invoiceStateContainerElement.innerText = "در حال پرداخت توسط خریدار ..."
+    try {
+        const RegisterFinancialTransactionReq = {
+            "FromSocietyID": 2, // TODO:::
+            "FromUserID": users.active.UserID,
+            "PosID": "00" + this.newInvoiceList.PosID, // TODO::: 00 is hack user must choose way
+
+            "Amount": Math.ceil(this.newInvoiceList.PayablePrice), // Math.round(this.newInvoiceList.PayablePrice),
+
+            "ToSocietyID": 2, // TODO:::
+            "ToUserID": this.newInvoiceList.BuyerUserID,
+        }
+        const RegisterFinancialTransactionRes = await RegisterFinancialTransaction(RegisterFinancialTransactionReq)
+        localStorage.setItem('LastTransferPaymentIDInInvoicePage', RegisterFinancialTransactionRes.ID)
+        invoiceStateContainerElement.innerText = "پرداخت توسط خریدار انجام شده"
+        this.newInvoiceList.State = InvoiceStatePayed
+
+        try {
+            const res = await this.checkoutInvoice()
+
+            // TODO::: close and show dialog about action.
+            alert("Transaction complete with this ID: " + RegisterFinancialTransactionRes.ID + "\nTransaction complete with this not registered items:", res.NotRegistered)
+            this.EnableNew()
+        } catch (err) {
+            PersiaError.NotifyError(err)
+        }
+    } catch (err) {
+        PersiaError.NotifyError(err)
+        invoiceStateContainerElement.innerText = "خطا در پرداخت توسط خریدار ..."
+    }
+    buttonElement.disabled = false
+}
+
 invoicePage.lastCheckoutCheck = async function () {
-    if (!this.newInvoiceList.BuyerUserID || this.newInvoiceList.BuyerUserID) {
+    if (!this.newInvoiceList.BuyerUserID) {
         this.newInvoiceList.BuyerUserID = users.active.UserID
         this.newInvoiceList.BuyerTelNumber = users.active.UserNumber
     } else {
@@ -414,16 +472,46 @@ invoicePage.lastCheckoutCheck = async function () {
     document.getElementById('lastApprovePayablePrice').innerText = this.newInvoiceList.PayablePrice
 }
 
-invoicePage.checkoutInvoice = async function () {
+invoicePage.approveCheckout = async function () {
     document.getElementById('getLastApproved').toggle()
-
-    const personOTPInput = document.getElementById('personOTPInput')
-    if (personOTPInput.value) {
-
+    try {
+        const res = await this.checkoutInvoice()
+        // TODO::: close and show dialog about action.
+        alert("Transaction complete with this not registered items:", res.NotRegistered)
+        this.EnableNew()
+    } catch (err) {
+        PersiaError.NotifyError(err)
     }
+}
 
-    alert("Sorry! Not implemented yet!")
-    // this.newInvoiceList = null
+invoicePage.checkoutInvoice = async function () {
+    const personOTPInput = document.getElementById('personOTPInput')
+    const invoiceStateContainerElement = document.getElementById("invoiceStateContainer")
+    const RegisterProductInvoiceReq = {
+        "UserID": this.newInvoiceList.BuyerUserID,
+        "UserOTP": Number(personOTPInput.value),
+        "UserTransactionID": localStorage.getItem('LastTransferPaymentIDInInvoicePage') || "",
+        "SenderDCID": "cfiiAF6pxrG15E50WcmqWGOJj7eutxifP04LOwPIEEg", // localStorage.getItem('LastSenderDCIDInInvoicePage'),
+        // "ReceiverDCID": localStorage.getItem('LastReceiverDCIDInInvoicePage'),
+        "Language": users.active.ContentPreferences.Language.ID,
+        "Products": [],
+    }
+    for (const pr in this.newInvoiceList.poolByID) {
+        RegisterProductInvoiceReq.Products.push({
+            "QuiddityID": this.newInvoiceList.poolByID[pr].Quiddity.ID,
+            "ProductAuctionID": this.newInvoiceList.poolByID[pr].ProductAuction.ID,
+            "Number": this.newInvoiceList.poolByID[pr].ProductNumber,
+        })
+    }
+    try {
+        let RegisterProductInvoiceRes = await RegisterProductInvoice(RegisterProductInvoiceReq)
+        this.newInvoiceList.State = InvoiceStateRegistered
+        invoiceStateContainerElement.innerText = "فاکتور خریدار ثبت نهایی شده است"
+        return RegisterProductInvoiceRes
+    } catch (err) {
+        invoiceStateContainerElement.innerText = "خطا در  ثبت فاکتور ..."
+        throw err
+    }
 }
 
 /**
@@ -433,9 +521,13 @@ invoicePage.checkoutInvoice = async function () {
 invoicePage.handleBarcodeCameraScanner = async function (results) {
     for (let res of results) {
         switch (res.type) {
+            case ZBar.SymbolTypes.EAN8:
             case ZBar.SymbolTypes.EAN13:
-                invoicePage.addProductToListByURI("urn:gs1:ean13:" + res.decode())
-                return
+                invoicePage.addProductToListByURI(GTINToURN(res.decode()))
+                break
+            default:
+                invoicePage.addProductToListByURI("urn:epc:id:iran:" + res.decode())
+                break
         }
     }
 }
@@ -449,11 +541,24 @@ invoicePage.barcodeCameraScannerWidgetOptions = {
  * @param {string} barcodeString 
  */
 invoicePage.handleBarcodeReader = async function (barcodeString) {
-    if (barcodeString.length === 13) {
-        invoicePage.addProductToListByURI("urn:gs1:ean13:" + barcodeString)
+    switch (barcodeString.length) {
+        case 8:
+        case 12:
+        case 13:
+        case 14:
+            invoicePage.addProductToListByURI(GTINToURN(barcodeString))
+            break
+        case 16:
+            invoicePage.addProductToListByURI("urn:epc:id:iran:" + barcodeString)
+            break
     }
 }
 
 invoicePage.barcodeReaderWidgetOptions = {
     CallBackResults: invoicePage.handleBarcodeReader,
 }
+
+const InvoiceStateNew = 0
+const InvoiceStateSendToPOS = 1
+const InvoiceStatePayed = 2
+const InvoiceStateRegistered = 3

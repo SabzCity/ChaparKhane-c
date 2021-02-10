@@ -3,8 +3,8 @@
 <tr>
     <td>${pr.ID}</td>
     <td>${pr.Title}</td>
-    <td>${pr.SuggestPrice}</td>
-    <td>${pr.PayablePrice}</td>
+    <td>${pr.SuggestPrice.toLocaleString()}</td>
+    <td>${pr.PayablePrice.toLocaleString()}</td>
     <td>${pr.ProductNumber}</td>
     <td>
         <button id="saveChanges" class="icon" title="${LocaleText[35]}" onclick="invoicePage.increaseProductNumber(this)">
