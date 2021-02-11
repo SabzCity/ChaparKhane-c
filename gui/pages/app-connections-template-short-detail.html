@@ -1,7 +1,24 @@
 <!-- For license and copyright information please see LEGAL file in repository -->
 
-<article>
+<article class="span-4">
     <a href="/app-connection?id=${conn.ID}">
-        ${conn.ID}
+        <header>
+            <h1 title="UserName">${conn.UserName}</h1>
+        </header>
+
+        <div>
+            <label class="typography--caption">Last Usage</label>
+            <div>${new Date(conn.LastUsage * 1000).toLocaleString()}</div>
+        </div>
+
+        <div>
+            <label class="typography--caption">Last IP Address</label>
+            <div>${IP.base64.String(conn.IPAddr)}</div>
+        </div>
+
+        <div>
+            <label class="typography--caption">Description</label>
+            <div>${conn.Description}</div>
+        </div>
     </a>
 </article>

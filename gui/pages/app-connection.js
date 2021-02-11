@@ -1,16 +1,19 @@
 /* For license and copyright information please see LEGAL file in repository */
 
-import '../libjs/connection.js'
 import '../libjs/base64.js'
 import '../libjs/ip.js'
-import '../libjs/time.js'
-import '../libjs/authorization.js'
-import '../libjs/connection.js'
+import '../libjs/authorization/authorization.js'
+import '../libjs/authorization/user.js'
 import '../libjs/services.js'
-import '../../sdk-js/get-user-app-connection.js'
-import '../../sdk-js/register-user-app-connection.js'
+import '../libjs/error/error.js'
+import '../libjs/cookie.js'
+import '../libjs/widget-notification/center.js'
+import '../libjs/widget-notification/pop-up.js'
+import '../libjs/sdk/sabz.city/get-user-app-connection.js'
+import '../libjs/sdk/sabz.city/register-user-app-connection.js'
+import '../libjs/sdk/sabz.city/datastore-user-apps-connection.js'
 
-Application.Pages["app-connection"] = {
+const appConnectionPage = {
     ID: "app-connection",
     Conditions: {
         id: "",
@@ -28,61 +31,59 @@ Application.Pages["app-connection"] = {
         Tags: ["LocaleText[5]"]
     },
     Icon: "sync_alt",
-    Related: [],
+    Related: ["login", "person"],
     HTML: (conn) => ``,
     CSS: '',
     Templates: {},
 }
+pages.RegisterPage(appConnectionPage)
 
-Application.Pages["app-connection"].ConnectedCallback = async function () {
+appConnectionPage.ConnectedCallback = async function () {
     let conn = {
-        Status: UserAppsConnectionIssued,
+        Status: UserAppConnectionIssued,
         AccessControl: {}
     }
 
-    if (Application.ActivePage.Conditions.new === "true") {
+    if (pages.ActivePage.Conditions.new === "true") {
         appConnectionPageEnableNew()
         return
     }
 
-    if (!Application.ActivePage.Conditions.id) {
+    if (!pages.ActivePage.Conditions.id) {
         // TODO:::
     } else {
         try {
             const req = {
-                "ID": Application.ActivePage.Conditions.id,
+                "ID": pages.ActivePage.Conditions.id,
             }
             conn = await GetUserAppConnection(req)
         } catch (err) {
-            switch (err) {
-                case 2605698703: // Authorization - User Not Allow
-                case 1685872164: // Ganjine - Record Not Found
-            }
+            return PersiaError.NotifyError(err)
         }
     }
 
     document.body.innerHTML = this.HTML(conn)
 
-    if (Application.ActivePage.Conditions.edit === "true") {
+    if (pages.ActivePage.Conditions.edit === "true") {
         appConnectionPageEnableEdit()
     }
 
     // widgets["hamburger-menu"].ConnectedCallback()
     // widgets["user-menu"].ConnectedCallback()
-    // widgets["service-menu"].ConnectedCallback()
+    // serviceMenuWidget.ConnectedCallback()
 }
 
-Application.Pages["app-connection"].DisconnectedCallback = function () {
+appConnectionPage.DisconnectedCallback = function () {
     const saveChangesButtonElement = document.getElementById("saveChanges")
-    if (saveChangesButtonElement.disabled === false) {
+    if (saveChangesButtonElement && saveChangesButtonElement.disabled === false) {
         alert("Changes not saved yet! All changes will lost if you leave page")
         return false
     }
 }
 
-function appConnectionPageEnableNew() {
+appConnectionPage.EnableNew = function () {
     let conn = {
-        Status: UserAppsConnectionIssued,
+        Status: UserAppConnectionIssued,
         Description: "",
         Weight: 0,
         ThingID: "",
@@ -91,7 +92,7 @@ function appConnectionPageEnableNew() {
         PeerPublicKey: "",
         AccessControl: {}
     }
-    document.body.innerHTML = Application.Pages["app-connection"].HTML(conn)
+    document.body.innerHTML = this.HTML(conn)
 
     const newConnElement = document.getElementById("newConn")
     newConnElement.disabled = true
@@ -133,7 +134,7 @@ function appConnectionPageEnableNew() {
     // TODO::: AccessControl
 }
 
-function appConnectionPageEnableEdit() {
+appConnectionPage.EnableEdit = function () {
     const editConnElement = document.getElementById("editConn")
     editConnElement.disabled = true
     const saveChangesButtonElement = document.getElementById("saveChanges")
@@ -162,12 +163,7 @@ function appConnectionPageEnableEdit() {
     // TODO::: AccessControl
 }
 
-async function appConnectionPageSaveEdit() {
-    const saveChangesButtonElement = document.getElementById("saveChanges")
-    saveChangesButtonElement.disabled = true
-    const discardChangesButtonElement = document.getElementById("discardChanges")
-    discardChangesButtonElement.disabled = true
-
+appConnectionPage.SaveEdit = async function () {
     const descriptionInputElement = document.getElementById('descriptionInput')
     descriptionInputElement.hidden = true
     const descriptionValueElement = document.getElementById('descriptionValue')
@@ -192,19 +188,19 @@ async function appConnectionPageSaveEdit() {
         const thingIDValueElement = document.getElementById('thingIDValue')
         thingIDValueElement.hidden = false
         thingIDValueElement.innerHTML = thingIDInputElement.value
-    
+
         const delegateUserIDInputElement = document.getElementById('delegateUserIDInput')
         delegateUserIDInputElement.hidden = true
         const delegateUserIDValueElement = document.getElementById('delegateUserIDValue')
         delegateUserIDValueElement.hidden = false
         delegateUserIDValueElement.innerHTML = delegateUserIDInputElement.value
-    
+
         const delegateUserTypeSelectElement = document.getElementById('delegateUserTypeSelect')
         delegateUserTypeSelectElement.hidden = true
         const delegateUserTypeValueElement = document.getElementById('delegateUserTypeValue')
         delegateUserTypeValueElement.hidden = false
-        delegateUserTypeValueElement.innerHTML = connection.type.GetNameByID(delegateUserTypeSelectElement.value)
-    
+        delegateUserTypeValueElement.innerHTML = authorization.UserType.GetDetailsByID(delegateUserTypeSelectElement.value)
+
         try {
             const req = {
                 "Description": descriptionInputElement.value,
@@ -220,27 +216,30 @@ async function appConnectionPageSaveEdit() {
             res = await RegisterUserAppConnection(req)
             document.getElementById('connID').innerHTML = res.ID
         } catch (err) {
-            switch (err) {
-                case 2605698703: // Authorization - User Not Allow
-                alert("Authorization - User Not Allow")
-                case 2605698703: // Authorization - Not Allow To Delegate
-                alert("Authorization - Not Allow To Delegate")
-                case 1685872164: // Ganjine - Record Not Found
-                case 1657764712: // JSON - Encoded String Corrupted
-            }
+            return PersiaError.NotifyError(err)
         }
+
+        newConnElement.disabled = false
     } else {
         const statusSelectElement = document.getElementById('statusSelect')
         statusSelectElement.hidden = true
         const statusValueElement = document.getElementById('statusValue')
         statusValueElement.hidden = false
-        statusValueElement.innerHTML = connection.status.GetNameByID(statusSelectElement.value)
+        statusValueElement.innerHTML = UserAppConnectionStatus.GetShortDetailByID(statusSelectElement.value)
 
         alert("Sorry! Not implemented yet!")
+
+        const editConnElement = document.getElementById("editConn")
+        editConnElement.disabled = false
     }
+
+    const saveChangesButtonElement = document.getElementById("saveChanges")
+    saveChangesButtonElement.disabled = true
+    const discardChangesButtonElement = document.getElementById("discardChanges")
+    discardChangesButtonElement.disabled = true
 }
 
-function appConnectionPageDiscardChanges() {
+appConnectionPage.DiscardChanges = function () {
     // TODO::: warn user first
 
     const saveChangesButtonElement = document.getElementById("saveChanges")
@@ -249,10 +248,37 @@ function appConnectionPageDiscardChanges() {
     discardChangesButtonElement.disabled = true
 }
 
-function appConnectionPageEnableExpireTheConnection() {
+appConnectionPage.EnableExpireTheConnection = function () {
     alert("Sorry! Not implemented yet!")
 }
 
-function appConnectionPageEnableRevokeTheConnection() {
+appConnectionPage.EnableRevokeTheConnection = function () {
     alert("Sorry! Not implemented yet!")
+}
+
+appConnectionPage.ActiveOrgConnection = function (personID, OrgID, UserType) {
+    if (UserType !== UserTypeOrg) {
+        // TODO::: remove below and active person gotten delegate connection. don't let active given delegate!
+        PersiaError.NotifyError(PersiaError.GetByID(2657416029)) // "Not Allow To Delegate"
+        return
+    }
+
+    users.ChangeActiveUser(OrgID, personID)
+
+    cookie.SetCookie({
+        Name: HTTPCookieNameDelegateUserID,
+        Value: OrgID,
+        MaxAge: "630720000",
+        // Secure: true,
+    })
+
+    cookie.SetCookie({
+        Name: HTTPCookieNameDelegateConnID,
+        Value: personID,
+        MaxAge: "630720000",
+        // Secure: true,
+    })
+
+    popUpNotificationWidget.New("LocaleText[54]", "LocaleText[55]", "Success")
+    // centerNotificationWidget.New("LocaleText[54]", "LocaleText[55]", "Success")
 }

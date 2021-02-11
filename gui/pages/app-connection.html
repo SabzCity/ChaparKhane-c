@@ -3,39 +3,42 @@
 <header class="app-bar">
     <span class="left">
         ${widgets["hamburger-menu"].ConnectedCallback()}
-        <a href="/"><img alt="SabzCity logo" src="/images/app-icon-48x48.png" /></a>
+        <a href="/"><img alt="SabzCity logo" src="/app-icon-48x48.png" /></a>
     </span>
 
     <span class="center"></span>
 
     <span class="right">
         ${widgets["user-menu"].ConnectedCallback()}
-        ${widgets["service-menu"].ConnectedCallback()}
+        ${serviceMenuWidget.ConnectedCallback()}
     </span>
 </header>
 
-<main>
-    <div role="toolbar">
-        <button id="newConn" class="icon" title="${LocaleText[47]}" onclick="appConnectionPageEnableNew()">
-            <i class="icons-font">perm_identity</i>
-        </button class="icon">
-        <button id="editConn" class="icon" title="${LocaleText[48]}" onclick="appConnectionPageEnableEdit()">
-            <i class="icons-font">edit</i>
-        </button>
-        <button class="icon" title="${LocaleText[49]}" onclick="appConnectionPageEnableExpireTheConnection()">
-            <i class="icons-font">power_off</i>
-        </button>
-        <button class="icon" title="${LocaleText[50]}" onclick="appConnectionPageEnableRevokeTheConnection()">
-            <i class="icons-font">block</i>
-        </button>
-        <button id="saveChanges" class="icon" title="${LocaleText[51]}" disabled onclick="appConnectionPageSaveEdit()">
-            <i class="icons-font">save</i>
-        </button>
-        <button id="discardChanges" class="icon" title="${LocaleText[52]}" disabled onclick="appConnectionPageDiscardChanges()">
-            <i class="icons-font">clear</i>
-        </button>
-    </div>
+<section role="toolbar">
+    <button id="newConn" class="icon" title="${LocaleText[47]}" onclick="appConnectionPage.EnableNew()">
+        <i class="icons-font">perm_identity</i>
+    </button class="icon">
+    <button id="editConn" class="icon" title="${LocaleText[48]}" onclick="appConnectionPage.EnableEdit()">
+        <i class="icons-font">edit</i>
+    </button>
+    <button class="icon" title="${LocaleText[49]}" onclick="appConnectionPage.EnableExpireTheConnection()">
+        <i class="icons-font">power_off</i>
+    </button>
+    <button class="icon" title="${LocaleText[50]}" onclick="appConnectionPage.EnableRevokeTheConnection()">
+        <i class="icons-font">block</i>
+    </button>
+    <button class="icon" title="${LocaleText[53]}" onclick="appConnectionPage.ActiveOrgConnection('${conn.ID}', '${conn.UserID}', ${conn.UserType})">
+        <i class="icons-font">group_add</i>
+    </button>
+    <button id="saveChanges" class="icon" title="${LocaleText[51]}" disabled onclick="appConnectionPage.SaveEdit()">
+        <i class="icons-font">save</i>
+    </button>
+    <button id="discardChanges" class="icon" title="${LocaleText[52]}" disabled onclick="appConnectionPage.DiscardChanges()">
+        <i class="icons-font">clear</i>
+    </button>
+</section>
 
+<main>
     <article class="layout-grid">
         <header class="span-12">
             <h1>${LocaleText[6]}</h1>
@@ -43,13 +46,13 @@
 
         <section>
             <label class="typography--caption" for="statusSelect">${LocaleText[7]}</label>
-            <div id="statusValue">${connection.status.GetNameByID(conn.Status)}</div>
+            <div id="statusValue">${UserAppConnectionStatus.GetShortDetailByID(conn.Status)}</div>
             <select id="statusSelect" value="${conn.Status}" hidden>
-                <option value="0" disabled>${connection.status.GetNameByID(0)}</option>
-                <option value="1">${connection.status.GetNameByID(1)}</option>
-                <option value="2">${connection.status.GetNameByID(2)}</option>
-                <option value="3">${connection.status.GetNameByID(3)}</option>
-                <option value="4">${connection.status.GetNameByID(4)}</option>
+                <option value="0" disabled>${UserAppConnectionStatus.GetShortDetailByID(0)}</option>
+                <option value="1">${UserAppConnectionStatus.GetShortDetailByID(1)}</option>
+                <option value="2">${UserAppConnectionStatus.GetShortDetailByID(2)}</option>
+                <option value="3">${UserAppConnectionStatus.GetShortDetailByID(3)}</option>
+                <option value="4">${UserAppConnectionStatus.GetShortDetailByID(4)}</option>
             </select>
 
             <label class="typography--caption" for="userIdentifier">${LocaleText[8]}</label>
@@ -65,12 +68,12 @@
         </section>
 
         <section>
-            <div class="typography--caption">${LocaleText[11]}</div>
-            <div>${conn.SocietyID}</div>
-            <div class="typography--caption">${LocaleText[12]}</div>
-            <div>${conn.RouterID}</div>
             <div class="typography--caption">${LocaleText[13]}</div>
             <div>${conn.GPAddr}</div>
+            <!-- TODO::: get part of GP address <div class="typography--caption">${LocaleText[11]}</div>
+            <div>${conn.SocietyID}</div>
+            <div class="typography--caption">${LocaleText[12]}</div>
+            <div>${conn.RouterID}</div> -->
             <div class="typography--caption">${LocaleText[14]}</div>
             <div>${IP.base64.String(conn.IPAddr)}</div>
 
@@ -81,21 +84,21 @@
             <div class="typography--caption">${LocaleText[16]}</div>
             <div>${conn.UserID}</div>
             <div class="typography--caption">${LocaleText[17]}</div>
-            <div>${connection.type.GetNameByID(conn.UserType)}</div>
+            <div>${authorization.UserType.GetDetailsByID(conn.UserType)}</div>
 
             <label class="typography--caption" for="delegateUserIDInput">${LocaleText[18]}</label>
             <div id="delegateUserIDValue">${conn.DelegateUserID}</div>
             <input type="text" id="delegateUserIDInput" autocomplete="off" value="${conn.DelegateUserID}" hidden />
 
             <label class="typography--caption" for="delegateUserTypeSelect">${LocaleText[19]}</label>
-            <div id="delegateUserTypeValue">${connection.type.GetNameByID(conn.DelegateUserType)}</div>
+            <div id="delegateUserTypeValue">${authorization.UserType.GetDetailsByID(conn.DelegateUserType)}</div>
             <select id="delegateUserTypeSelect" value="${conn.DelegateUserType}" hidden>
-                <option value="0" disabled>${connection.type.GetNameByID(0)}</option>
-                <option value="1" disabled>${connection.type.GetNameByID(1)}</option>
-                <option value="2">${connection.type.GetNameByID(2)}</option>
-                <option value="3">${connection.type.GetNameByID(3)}</option>
-                <option value="4">${connection.type.GetNameByID(4)}</option>
-                <option value="5">${connection.type.GetNameByID(5)}</option>
+                <option value="0" disabled>${authorization.UserType.GetDetailsByID(0)}</option>
+                <option value="1" disabled>${authorization.UserType.GetDetailsByID(1)}</option>
+                <option value="2">${authorization.UserType.GetDetailsByID(2)}</option>
+                <option value="3">${authorization.UserType.GetDetailsByID(3)}</option>
+                <option value="4">${authorization.UserType.GetDetailsByID(4)}</option>
+                <option value="5">${authorization.UserType.GetDetailsByID(5)}</option>
             </select>
 
             <label class="typography--caption" for="publicKeyInput">${LocaleText[20]}</label>
@@ -105,7 +108,7 @@
 
         <section>
             <div class="typography--caption">${LocaleText[21]}</div>
-            <div>${time.unix.String(conn.LastUsage)}</div>
+            <div>${new Date(conn.LastUsage * 1000).toLocaleString()}</div>
             <div class="typography--caption">${LocaleText[22]}</div>
             <div>${conn.PacketPayloadSize}</div>
             <div class="typography--caption">${LocaleText[23]}</div>
@@ -148,13 +151,13 @@
                 <h2>${LocaleText[45]}:</h2>
 
                 <div class="typography--caption">${LocaleText[36]}</div>
-                <div>${conn.AccessControl.AllowDays}</div>
+                <div>${conn.AccessControl.AllowWeekdays}</div>
                 <div class="typography--caption">${LocaleText[37]}</div>
-                <div>${conn.AccessControl.DenyDays}</div>
+                <div>${conn.AccessControl.DenyWeekdays}</div>
                 <div class="typography--caption">${LocaleText[38]}</div>
-                <div>${conn.AccessControl.AllowTime}</div>
+                <div>${conn.AccessControl.AllowHour}</div>
                 <div class="typography--caption">${LocaleText[39]}</div>
-                <div>${conn.AccessControl.DenyTime}</div>
+                <div>${conn.AccessControl.DenyHour}</div>
             </section>
 
             <section>
@@ -165,13 +168,12 @@
                 <div class="typography--caption">${LocaleText[41]}</div>
                 <div>${conn.AccessControl.DenyServices}</div>
                 <div class="typography--caption">${LocaleText[42]}</div>
-                <div>${authorization.CRUD.GetNameByID(conn.AccessControl.AllowCRUD)}</div>
+                <div>${authorization.CRUD.GetShortDetailByID(conn.AccessControl.AllowCRUD)}</div>
+                <div>${authorization.CRUD.GetLongDetailByID(conn.AccessControl.AllowCRUD)}</div>
                 <div class="typography--caption">${LocaleText[43]}</div>
-                <div>${authorization.CRUD.GetNameByID(conn.AccessControl.DenyCRUD)}</div>
+                <div>${authorization.CRUD.GetShortDetailByID(conn.AccessControl.DenyCRUD)}</div>
+                <div>${authorization.CRUD.GetLongDetailByID(conn.AccessControl.AllowCRUD)}</div>
             </section>
         </section>
     </article>
-
-    <footer>
-    </footer>
 </main>

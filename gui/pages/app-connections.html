@@ -3,14 +3,14 @@
 <header class="app-bar">
     <span class="left">
         ${widgets["hamburger-menu"].ConnectedCallback()}
-        <a href="/"><img alt="SabzCity logo" src="/images/app-icon-48x48.png" /></a>
+        <a href="/"><img alt="SabzCity logo" src="/app-icon-48x48.png" /></a>
     </span>
 
     <span class="center"></span>
 
     <span class="right">
         ${widgets["user-menu"].ConnectedCallback()}
-        ${widgets["service-menu"].ConnectedCallback()}
+        ${serviceMenuWidget.ConnectedCallback()}
     </span>
 </header>
 
@@ -20,7 +20,7 @@
             <h1>${LocaleText[6]}</h1>
         </header>
 
-        <section id="user-connections"></section>
+        <section id="user-connections" class="span-12 layout-grid"></section>
 
         <footer class="span-12">
             ${LocaleText[9]}
@@ -32,7 +32,7 @@
             <h1>${LocaleText[7]}</h1>
         </header>
 
-        <section id="gotten-delegate"></section>
+        <section id="gotten-delegate" class="span-12 layout-grid"></section>
 
         <footer class="span-12">
             ${LocaleText[9]}
@@ -44,7 +44,7 @@
             <h1>${LocaleText[8]}</h1>
         </header>
 
-        <section id="given-delegate"></section>
+        <section id="given-delegate" class="span-12 layout-grid"></section>
 
         <footer class="span-12">
             ${LocaleText[9]}
