@@ -1,0 +1,99 @@
+<!-- For license and copyright information please see LEGAL file in repository -->
+
+<header class="app-bar">
+    <span class="left">
+        ${widgets["hamburger-menu"].ConnectedCallback()}
+        <a href="/"><img alt="SabzCity logo" src="/app-icon-48x48.png" /></a>
+    </span>
+
+    <span class="center"></span>
+
+    <span class="right">
+        ${widgets["user-menu"].ConnectedCallback()}
+        ${serviceMenuWidget.ConnectedCallback()}
+    </span>
+</header>
+
+<section role="toolbar">
+    <button id="newQuiddity" class="icon" title="${LocaleText[6]}" onclick="quiddityPage.EnableNew()">
+        <i class="icons-font">add</i>
+    </button class="icon">
+    <button id="editQuiddity" class="icon" title="${LocaleText[7]}" onclick="quiddityPage.EnableEdit()">
+        <i class="icons-font">edit</i>
+    </button>
+    <button id="addNewLanguage" class="icon" title="${LocaleText[8]}" onclick="quiddityPage.AddNewLanguage()">
+        <i class="icons-font">translate</i>
+    </button>
+    <button id="saveChanges" class="icon" title="${LocaleText[9]}" disabled onclick="quiddityPage.SaveEdit()">
+        <i class="icons-font">save</i>
+    </button>
+    <button id="discardChanges" class="icon" title="${LocaleText[10]}" disabled onclick="quiddityPage.DiscardChanges()">
+        <i class="icons-font">clear</i>
+    </button>
+
+    ${barcodeCameraScannerWidget.ConnectedCallback(quiddityPage.BarcodeScannerOptions)}
+</section>
+
+<main>
+    <article class="layout-grid">
+        <header class="span-12">
+                <label class="typography--caption" for="quiddityTitleInput">${LocaleText[11]}</label>
+                <h1>${quiddity.Title}</h1>
+                <input type="text" id="quiddityTitleInput" autocomplete="off" value="${quiddity.Title}" hidden />
+        </header>
+
+        <div class="span-2">
+            <label class="typography--caption" for="quiddityLanguageInput">${LocaleText[14]}</label>
+            <p id="quiddityLanguage">${language.String(quiddity.Language)}</p>
+            <input type="text" id="quiddityLanguageInput" list=languages autocomplete="language" value="${language.String(quiddity.Language)}" onfocus="this.value=''" hidden />
+            <datalist id=languages>${language.GetAppSupportedAsOptions()}</datalist>
+        </div>
+
+        <div class="span-2">
+            <a href="/quiddities?org=${quiddity.OrgID}">
+                <div class="typography--caption">${LocaleText[15]}</div>
+                <p>${quiddity.OrgID}</p>
+            </a>
+        </div>
+
+        <div class="span-2">
+            <label class="typography--caption" for="quiddityURIInput">${LocaleText[16]}</label>
+            <p>${quiddity.URI}</p>
+            <input type="text" id="quiddityURIInput" placeholder="urn:epc:id:gtin:" autocomplete="off" value="${quiddity.URI}" hidden />
+        </div>
+
+        <div class="span-2">
+            <div class="typography--caption">${LocaleText[17]}</div>
+            <p id="quiddityWriteTime">${new Date(quiddity.WriteTime * 1000).toLocaleString()}</p>
+        </div>
+
+        <div class="span-2">
+            <div class="typography--caption">${LocaleText[18]}</div>
+            <p id="quiddityStatus">${quiddity.Status}</p>
+        </div>
+    </article>
+
+    <article class="layout-grid">
+        <header class="span-12">
+            <h1>Quiddity Links</h1>
+        </header>
+
+        <a href="/product-price?quiddity=${quiddity.ID}">Product Price</a>
+        <a href="/product-auction?quiddity=${quiddity.ID}">Default Product Auction</a>
+        <a href="/product-auctions?quiddity=${quiddity.ID}">Product Auctions</a>
+        <a href="/product-inventory?quiddity=${quiddity.ID}">Product Inventory</a>
+    </article>
+
+    <!-- <article class="layout-grid">
+        <section id="pictures" class="span-12">
+            <img src="${quiddity.Pictures[0] || '/No_image_available.svg'}" alt="${LocaleText[12]}">
+        </section>
+
+        <section id="quiddityText" class="span-12">${quiddity.Text}</section>
+
+        <section id="quiddityTextInputContainer" class="span-12" hidden>
+            <textarea id="quiddityTextInput" name="quiddityTextInput" id="" cols="30" rows="50"></textarea>
+            <label class="typography--caption" for="quiddityTextInput">${LocaleText[13]}</label>
+        </section>
+    </article> -->
+</main>
